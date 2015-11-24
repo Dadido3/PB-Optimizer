@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<project xmlns="http://www.purebasic.com/namespace" version="1.0" creator="PureBasic 5.40 LTS (Windows - x64)">
+  <section name="config">
+    <options closefiles="1" openmode="0" name="Optimizer"/>
+  </section>
+  <section name="data">
+    <explorer view="" pattern="0"/>
+    <log show="1"/>
+    <lastopen date="2015-11-24 01:00" user="David Vogel" host="DAVIDS"/>
+  </section>
+  <section name="files">
+    <file name="Includes\Assembler.pbi">
+      <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="++"/>
+      <fingerprint md5="840a0cbf4722d4672856f8dfd5686202"/>
+    </file>
+    <file name="Includes\Optimizer\Test.pbi">
+      <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="+++"/>
+      <fingerprint md5="a98dd4415ca815b7d61e82b6cff6b7c3"/>
+    </file>
+    <file name="Includes\Visualizer.pbi">
+      <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="++"/>
+      <fingerprint md5="65f7fc763e196bd51b404c0d3332cbef"/>
+    </file>
+    <file name="Main.pb">
+      <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="+"/>
+      <fingerprint md5="8b029c00a0163d17be7b0b4a4f7de240"/>
+    </file>
+  </section>
+  <section name="targets">
+    <target name="x86" enabled="1" default="1">
+      <inputfile value="Main.pb"/>
+      <outputfile value="Distribution\Windows\x86\FAsm.exe"/>
+      <compiler version="PureBasic 5.40 LTS (Windows - x86)"/>
+      <executable value="Distribution\x86\FAsm.exe"/>
+      <options unicode="1" xpskin="1" user="1" onerror="1"/>
+      <compilecount enable="1" value="28"/>
+      <buildcount enable="1" value="0"/>
+    </target>
+  </section>
+</project>
