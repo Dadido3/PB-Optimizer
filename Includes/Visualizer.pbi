@@ -1,6 +1,6 @@
 ﻿; ##################################################### License / Copyright #########################################
 ; 
-;     Optimizer
+;     PB-Optimizer
 ;     Copyright (C) 2015  David Vogel
 ; 
 ;     This program is free software; you can redistribute it and/or modify
@@ -200,6 +200,15 @@ Module Visualizer
       ForEach Line_Reference()
         Y_M = Line_Reference()\Line_Number * (#Text_Height + #Text_Line_Spacing)  * Canvas\Zoom + Canvas\Offset_Y
         If Y_M >= - #Text_Height * Canvas\Zoom And Y_M < Height
+          
+          If Line_Reference()\Line\Flag & Assembler::#Line_Flag_SP_Calculated
+            X_M = -15 * Canvas\Zoom + Canvas\Offset_X
+            MovePathCursor(X_M, Y_M + #Text_Height * Canvas\Zoom)
+            
+            VectorSourceColor(RGBA(255,255,255,127))
+            DrawVectorText(Str(Line_Reference()\Line\Stack_Pointer))
+          EndIf
+          
           ForEach Line_Reference()\Element()
             X_M = Line_Reference()\Element()\X * Canvas\Zoom + Canvas\Offset_X
             Text = Line_Reference()\Element()\Text
@@ -683,8 +692,9 @@ Module Visualizer
   ; ################################################### Data Sections ###############################################
   
 EndModule
-; IDE Options = PureBasic 5.40 LTS (Windows - x64)
-; CursorPosition = 18
+; IDE Options = PureBasic 5.41 LTS Beta 1 (Windows - x64)
+; CursorPosition = 209
+; FirstLine = 168
 ; Folding = --
 ; EnableUnicode
 ; EnableXP

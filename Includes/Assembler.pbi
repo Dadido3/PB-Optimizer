@@ -1,6 +1,6 @@
 ﻿; ##################################################### License / Copyright #########################################
 ; 
-;     Optimizer
+;     PB-Optimizer
 ;     Copyright (C) 2015  David Vogel
 ; 
 ;     This program is free software; you can redistribute it and/or modify
@@ -169,9 +169,9 @@ DeclareModule Assembler
     #Label_Type_Anonymous         ; Starting with "@@"
   EndEnumeration
   
-  EnumerationBinary
-    #File_Architecture_x86        
-    #File_Architecture_x86_64     ; 
+  Enumeration
+    #Architecture_x86
+    #Architecture_x86_64
   EndEnumeration
   
   ; ################################################### Structures ##################################################
@@ -182,7 +182,7 @@ DeclareModule Assembler
     *Influencee.Line              ; The line (instruction) which depends on the data of the *Influencer
     *Influencee_Address.Address   ; The pointer to the address which caused the dependency
     
-    Virtual.i                     ; #True: It's not a real dependency. This is the case if data is being written to the influencee address.
+    Virtual.i                     ; #True: It's not a real dependency. The Influencee_Address isn't affected of the Influencer_Address
   EndStructure
   
   Structure Address
@@ -205,7 +205,8 @@ DeclareModule Assembler
     List Sub_Address.Address()
     
     ; #### #Address_Stack
-    ; TODO: Stack addressing
+    Stack_Position.i              ; The stack pointer offset
+    Stack_Relative.i              ; #True: position is relative to the stack pointer of the line. Like [esp - Stack_Position]
     
     ; #### #Address_Flags
     Flags.q
@@ -214,7 +215,7 @@ DeclareModule Assembler
   
   Structure Register
     Name.s
-    Group.i               ; Registers in a group (like rax, eax, ax, ...) influence each other on a change
+    Group.i               ; Registers in the same group (like rax, eax, ax, ...) influence each other on a change
   EndStructure
   
   Structure OpCode
@@ -227,6 +228,10 @@ DeclareModule Assembler
     
     List Read_Operand.i()         ; Operands which read data
     List Mod_Operand.i()          ; Operands which modify data
+    
+    ; #### Stack
+    Stack_Delta_x86.i            ; Change of the stack pointer throught this opcode
+    Stack_Delta_x86_64.i
     
   EndStructure
   
@@ -258,14 +263,19 @@ DeclareModule Assembler
     List *Influence.Dependency()
     
     ; #### Program flow
-    List *Next_Line.Line()
-    List *Prev_Line.Line()
+    List *Next_Line.Line()        ; List of line which can jump to the current line (Following the program flow)
+    List *Prev_Line.Line()        ; List of possible next lines (Following the program flow)
+    
+    ; #### Stack
+    Stack_Pointer.i               ; Current stack pointer offset
     
     Flag.i
   EndStructure
   
   Structure Line_Container
     List Line.Line()
+    
+    Architecture.i
   EndStructure
   
   Structure SubRoutine
@@ -278,7 +288,7 @@ DeclareModule Assembler
     
     *Entry_Point.Line
     
-    List SubRoutine.SubRoutine()
+    ;List SubRoutine.SubRoutine()
   EndStructure
   
   Structure Line_Iteration
@@ -401,7 +411,7 @@ Module Assembler
               SortStructuredList(*Address_B\Sub_Address(), #PB_Sort_Ascending, OffsetOf(Address\Value), TypeOf(Address\Value))
               SortStructuredList(*Address_B\Sub_Address(), #PB_Sort_Descending, OffsetOf(Address\Type), TypeOf(Address\Type))
               
-              If ListSize(*Address_A\Sub_Address()) And ListSize(*Address_B\Sub_Address())
+              If ListSize(*Address_A\Sub_Address()) = ListSize(*Address_B\Sub_Address())
                 ResetList(*Address_A\Sub_Address())
                 ResetList(*Address_B\Sub_Address())
                 While NextElement(*Address_A\Sub_Address()) And NextElement(*Address_B\Sub_Address())
@@ -793,7 +803,7 @@ Module Assembler
   Procedure Line_Calculate_Dependencies(*Line_Container.Line_Container, *Line.Line)
     Protected NewList Line_Iteration.Line_Iteration()
     Protected NewMap Line_Done()                        ; Map to check if line was done previously
-    Protected NewList Read_Address.Address_Iteration() ; List of addresses to be checked
+    Protected NewList Read_Address.Address_Iteration()  ; List of addresses to be checked
     Protected *Current_Line.Line
     Protected Current_Flags.q
     Protected Temp_Result.q
@@ -895,8 +905,8 @@ Module Assembler
           
           If *Current_Line\OpCode
             
-            ; #### If this line calls a subroutine, and the influencee is a memory-address, then it could have been modified in the call
-            ; #### This doesn't mean that it is a dependency, therefore this shouldn't stop searching nor change "Current_Flags"
+            ; #### If this line calls a subroutine, and the influencee is a memory-address, then the memory could have been modified by the subroutine
+            ; #### This doesn't mean that it is a dependency, therefore this should neither stop searching nor change "Current_Flags"
             If Read_Address()\Address\Type = #Address_Type_Memory And *Current_Line\OpCode\Mnemonic = "CALL"
               AddElement(*Line\Dependency())
               *Line\Dependency()\Influencer = *Current_Line
@@ -1102,6 +1112,119 @@ Module Assembler
     Wend
     
     PopListPosition(*Line_Container\Line())
+  EndProcedure
+  
+  Procedure Line_Calculate_Stack(*Line_Container.Line_Container, *Line.Line)
+    Protected Stack_Pointer.i
+    Protected Found.i
+    
+    If *Line\Flag & #Line_Flag_SP_Calculated
+      ProcedureReturn #True
+    EndIf
+    
+    ; #### Get the stack position of the previous line, but only if they don't contradict each other!
+    ForEach *Line\Prev_Line()
+      If *Line\Prev_Line()\Flag & #Line_Flag_SP_Calculated
+        If Found
+          If Not Stack_Pointer = *Line\Prev_Line()\Stack_Pointer
+            ProcedureReturn #False ; TODO: When there is a contradiction, clear all following stack pointer values
+          EndIf
+        Else
+          Stack_Pointer = *Line\Prev_Line()\Stack_Pointer
+          Found = #True
+        EndIf
+      EndIf
+    Next
+    
+    ; #### Fail if there are previous elements, but there isn't any calculated stack pointer
+    If Not Found And ListSize(*Line\Prev_Line())
+      ProcedureReturn #False
+    EndIf
+    
+    If *Line\OpCode
+      
+      ; #### In case of a subroutine call stop calculating the stack TODO: Gather informations from subroutines, and use it 
+      If *Line\OpCode\Mnemonic = "CALL"
+        ProcedureReturn #False
+      EndIf
+      
+      ; #### Apply change to the stack pointer
+      Select *Line_Container\Architecture
+        Case #Architecture_x86
+          Stack_Pointer + *Line\OpCode\Stack_Delta_x86
+          
+        Case #Architecture_x86_64
+          Stack_Pointer + *Line\OpCode\Stack_Delta_x86_64
+          
+      EndSelect
+      
+      ; #### Special case when operands write to the SP register. Like ADD esp, 5
+      ForEach *Line\OpCode\Mod_Operand()
+        If SelectElement(*Line\Operand(), *Line\OpCode\Mod_Operand())
+          If *Line\Operand()\Address\Type = #Address_Type_Register And *Line\Operand()\Address\Register\Group = #Register_Group_SP
+            Select *Line\OpCode\Mnemonic
+              Case "SUB"
+                If SelectElement(*Line\Operand(), 1) And *Line\Operand()\Address\Type = #Address_Type_Immediate_Value
+                  Stack_Pointer - Val(*Line\Operand()\Address\Value)
+                Else
+                  ProcedureReturn #False
+                EndIf
+                
+              Case "ADD"
+                If SelectElement(*Line\Operand(), 1) And *Line\Operand()\Address\Type = #Address_Type_Immediate_Value
+                  Stack_Pointer + Val(*Line\Operand()\Address\Value)
+                Else
+                  ProcedureReturn #False
+                EndIf
+                
+              Default
+                ProcedureReturn #False
+                
+            EndSelect
+          EndIf
+        EndIf
+      Next
+      
+    EndIf
+    
+    *Line\Flag | #Line_Flag_SP_Calculated
+    *Line\Stack_Pointer = Stack_Pointer
+    
+    ProcedureReturn #True
+  EndProcedure
+  
+  Procedure Line_Calculate_Stack_Tree(*Line_Container.Line_Container, *Start_Line.Line)
+    Protected NewList Line_Iteration.Line_Iteration()
+    Protected *Current_Line.Line
+    
+    PushListPosition(*Line_Container\Line())
+    
+    AddElement(Line_Iteration())
+    Line_Iteration()\Line = *Start_Line
+      
+    While FirstElement(Line_Iteration())
+      *Current_Line = Line_Iteration()\Line
+      DeleteElement(Line_Iteration())
+      
+      Debug *Current_Line\Raw
+      
+      If Not Line_Calculate_Stack(*Line_Container, *Current_Line)
+        Continue
+      EndIf
+      
+      ForEach *Current_Line\Next_Line()
+        If Not *Current_Line\Next_Line()\Flag & #Line_Flag_SP_Calculated
+          LastElement(Line_Iteration())
+          AddElement(Line_Iteration())
+          Line_Iteration()\Line = *Current_Line\Next_Line()
+        EndIf
+      Next
+      
+    Wend
+    
+    PopListPosition(*Line_Container\Line())
+    
+    ProcedureReturn #True
   EndProcedure
   
   Procedure Line_Delete(*Line_Container.Line_Container, *Line.Line)
@@ -1336,6 +1459,9 @@ Module Assembler
       *Assembler_File\Line_Container\Line()\Raw = ReadString(File, #PB_Ascii)
     Wend
     
+    ; #### Define the architecture
+    *Assembler_File\Line_Container\Architecture | #Architecture_x86
+    
     ; #### Parse each line
     ForEach *Assembler_File\Line_Container\Line()
       Line_Parse(*Assembler_File\Line_Container, *Assembler_File\Line_Container\Line())
@@ -1371,10 +1497,19 @@ Module Assembler
     
     ; #### DEBUG: also calculate the flow starting from labels containing "_Procedure"
     ForEach *Assembler_File\Line_Container\Line()
-      If *Assembler_File\Line_Container\Line()\Label And FindString(*Assembler_File\Line_Container\Line()\Label, "_Procedure")
+      If *Assembler_File\Line_Container\Line()\Label_Type = #Label_Type_Global And FindString(*Assembler_File\Line_Container\Line()\Label, "_Procedure")
         Line_Calculate_Flow_Tree(*Assembler_File\Line_Container, *Assembler_File\Line_Container\Line())
       EndIf
     Next
+    
+    ; #### Calculate the stack
+    Line_Calculate_Stack_Tree(*Assembler_File\Line_Container, *Assembler_File\Entry_Point)
+    ForEach *Assembler_File\Line_Container\Line()
+      If *Assembler_File\Line_Container\Line()\Label_Type = #Label_Type_Global And FindString(*Assembler_File\Line_Container\Line()\Label, "_Procedure")
+        Line_Calculate_Stack_Tree(*Assembler_File\Line_Container, *Assembler_File\Line_Container\Line())
+      EndIf
+    Next
+    
     
     ; #### Calculate dependencies
     ForEach *Assembler_File\Line_Container\Line()
@@ -1430,7 +1565,19 @@ Module Assembler
     Register()\Group = Group
   EndProcedure
   
-  Procedure OpCode_Add(Name.s, Test_Flags.q, Mod_Flags.q, Read_Operands.i, Mod_Operands.i)
+  Procedure OpCode_Mod_Register_Add(*OpCode.OpCode, *Register.Register)
+    AddElement(*OpCode\Mod_Address())
+    *OpCode\Mod_Address()\Type = #Address_Type_Register
+    *OpCode\Mod_Address()\Register = *Register
+  EndProcedure
+  
+  Procedure OpCode_Read_Register_Add(*OpCode.OpCode, *Register.Register)
+    AddElement(*OpCode\Read_Address())
+    *OpCode\Read_Address()\Type = #Address_Type_Register
+    *OpCode\Read_Address()\Register = *Register
+  EndProcedure
+  
+  Procedure OpCode_Add(Name.s, Stack_Delta_x86.i, Stack_Delta_x86_64, Test_Flags.q, Mod_Flags.q, Read_Operands.i, Mod_Operands.i)
     Protected i
     
     OpCode(Name)\Mnemonic = StringField(Name, 1, "@")
@@ -1470,18 +1617,18 @@ Module Assembler
       EndIf
     Next
     
-  EndProcedure
-  
-  Procedure OpCode_Mod_Register_Add(*OpCode.OpCode, *Register.Register)
-    AddElement(*OpCode\Mod_Address())
-    *OpCode\Mod_Address()\Type = #Address_Type_Register
-    *OpCode\Mod_Address()\Register = *Register
-  EndProcedure
-  
-  Procedure OpCode_Read_Register_Add(*OpCode.OpCode, *Register.Register)
-    AddElement(*OpCode\Read_Address())
-    *OpCode\Read_Address()\Type = #Address_Type_Register
-    *OpCode\Read_Address()\Register = *Register
+    ; #### Stack delta
+    OpCode()\Stack_Delta_x86 = Stack_Delta_x86
+    OpCode()\Stack_Delta_x86_64 = Stack_Delta_x86_64
+    If OpCode()\Stack_Delta_x86
+      OpCode_Mod_Register_Add(OpCode(), Register("ESP"))
+      OpCode_Read_Register_Add(OpCode(), Register("ESP"))
+    EndIf
+    If OpCode()\Stack_Delta_x86_64
+      OpCode_Mod_Register_Add(OpCode(), Register("RSP"))
+      OpCode_Read_Register_Add(OpCode(), Register("RSP"))
+    EndIf
+    
   EndProcedure
   
   ; ################################################### Init ########################################################
@@ -1653,87 +1800,88 @@ Module Assembler
   Register_Add("ZMM30",  #Register_Group_XMM30)
   Register_Add("ZMM31",  #Register_Group_XMM31)
   
-  ; #### OpCodes        Test_Flags     Mod_Flags      Read Oper. Mod. Oper.
-  ;                     %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
-  OpCode_Add("CALL",    %000000000000, %000000000000, %00000001, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("ESP")) : OpCode_Mod_Register_Add(OpCode(), Register("EAX")) : OpCode_Mod_Register_Add(OpCode(), Register("ECX")) : OpCode_Mod_Register_Add(OpCode(), Register("EDX"))
-  OpCode_Add("MOV",     %000000000000, %000000000000, %00000010, %00000001)
-  OpCode_Add("LEA",     %000000000000, %000000000000, %00000010, %00000001)
-  ;                     %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
-  OpCode_Add("ADD",     %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("ADC",     %000000000001, %100011010101, %00000011, %00000001)
-  OpCode_Add("SUB",     %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("SBB",     %000000000001, %100011010101, %00000011, %00000001)
-  OpCode_Add("IMUL@1",  %000000000000, %100011010101, %00000001, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("EAX")) : OpCode_Mod_Register_Add(OpCode(), Register("EDX")) : OpCode_Read_Register_Add(OpCode(), Register("EAX"))
-  OpCode_Add("IMUL@2",  %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("IMUL@3",  %000000000000, %100011010101, %00000110, %00000001)
-  OpCode_Add("DEC",     %000000000000, %100011010100, %00000001, %00000001)
-  OpCode_Add("INC",     %000000000000, %100011010100, %00000001, %00000001)
-  ;                     %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
-  OpCode_Add("SHL",     %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("SHR",     %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("SAL",     %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("SAR",     %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("ROL",     %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("ROR",     %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("RCL",     %000000000001, %100011010101, %00000011, %00000001)
-  OpCode_Add("RCR",     %000000000001, %100011010101, %00000011, %00000001)
-  ;                     %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
-  OpCode_Add("AND",     %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("OR",      %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("XOR",     %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("NOT",     %000000000000, %000000000000, %00000001, %00000001)
-  OpCode_Add("NEG",     %000000000000, %100011010101, %00000001, %00000001)
-  ;                     %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
-  OpCode_Add("CWD",     %000000000000, %000000000000, %00000000, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("DX"))  : OpCode_Read_Register_Add(OpCode(), Register("AX"))
-  OpCode_Add("CDQ",     %000000000000, %000000000000, %00000000, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("EDX")) : OpCode_Read_Register_Add(OpCode(), Register("EAX"))
-  OpCode_Add("CQO",     %000000000000, %000000000000, %00000000, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("RDX")) : OpCode_Read_Register_Add(OpCode(), Register("RAX"))
-  ;                     %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
-  OpCode_Add("PUSH",    %000000000000, %000000000000, %00000001, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("ESP")) : OpCode_Read_Register_Add(OpCode(), Register("ESP"))
-  OpCode_Add("POP",     %000000000000, %000000000000, %00000000, %00000001) : OpCode_Mod_Register_Add(OpCode(), Register("ESP")) : OpCode_Read_Register_Add(OpCode(), Register("ESP"))
-  OpCode_Add("CMP",     %000000000000, %100011010101, %00000011, %00000000)
-  ;                     %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
-  OpCode_Add("JB",      %000000000001, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNAE",    %000000000001, %000000000000, %00000001, %00000000)
-  OpCode_Add("JC",      %000000000001, %000000000000, %00000001, %00000000)
-  OpCode_Add("JBE",     %000001000001, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNA",     %000001000001, %000000000000, %00000001, %00000000)
-  OpCode_Add("JCXZ",    %000000000000, %000000000000, %00000001, %00000000) : OpCode_Read_Register_Add(OpCode(), Register("ECX"))
-  OpCode_Add("JECXZ",   %000000000000, %000000000000, %00000001, %00000000) : OpCode_Read_Register_Add(OpCode(), Register("ECX"))
-  OpCode_Add("JL",      %100010000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNGE",    %100010000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JLE",     %100011000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNG",     %100011000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JMP",     %000000000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNB",     %000000000001, %000000000000, %00000001, %00000000)
-  OpCode_Add("JAE",     %000000000001, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNC",     %000000000001, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNBE",    %000001000001, %000000000000, %00000001, %00000000)
-  OpCode_Add("JA",      %000001000001, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNL",     %100010000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JGE",     %100010000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNLE",    %100011000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JG",      %100011000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNO",     %100000000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNP",     %000000000100, %000000000000, %00000001, %00000000)
-  OpCode_Add("JPO",     %000000000100, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNS",     %000010000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNZ",     %000001000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNE",     %000001000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JO",      %000001000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JP",      %000000000100, %000000000000, %00000001, %00000000)
-  OpCode_Add("JPE",     %000000000100, %000000000000, %00000001, %00000000)
-  OpCode_Add("JS",      %000010000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JZ",      %000001000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JE",      %000001000000, %000000000000, %00000001, %00000000)
-  ;                     %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
-  OpCode_Add("NOP",     %000000000000, %000000000000, %00000000, %00000000)
-  OpCode_Add("RET",     %000000000000, %000000000000, %00000001, %00000000)
+  ; #### OpCodes       Stack    Test_Flags     Mod_Flags      Read Oper. Mod. Oper.
+  ;                    x86 _64  %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
+  OpCode_Add("CALL",     0,  0, %000000000000, %000000000000, %00000001, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("ESP")) : OpCode_Mod_Register_Add(OpCode(), Register("EAX")) : OpCode_Mod_Register_Add(OpCode(), Register("ECX")) : OpCode_Mod_Register_Add(OpCode(), Register("EDX"))
+  OpCode_Add("MOV",      0,  0, %000000000000, %000000000000, %00000010, %00000001)
+  OpCode_Add("LEA",      0,  0, %000000000000, %000000000000, %00000010, %00000001)
+  ;                             %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
+  OpCode_Add("ADD",      0,  0, %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("ADC",      0,  0, %000000000001, %100011010101, %00000011, %00000001)
+  OpCode_Add("SUB",      0,  0, %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("SBB",      0,  0, %000000000001, %100011010101, %00000011, %00000001)
+  OpCode_Add("IMUL@1",   0,  0, %000000000000, %100011010101, %00000001, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("EAX")) : OpCode_Mod_Register_Add(OpCode(), Register("EDX")) : OpCode_Read_Register_Add(OpCode(), Register("EAX"))
+  OpCode_Add("IMUL@2",   0,  0, %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("IMUL@3",   0,  0, %000000000000, %100011010101, %00000110, %00000001)
+  OpCode_Add("DEC",      0,  0, %000000000000, %100011010100, %00000001, %00000001)
+  OpCode_Add("INC",      0,  0, %000000000000, %100011010100, %00000001, %00000001)
+  ;                             %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
+  OpCode_Add("SHL",      0,  0, %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("SHR",      0,  0, %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("SAL",      0,  0, %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("SAR",      0,  0, %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("ROL",      0,  0, %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("ROR",      0,  0, %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("RCL",      0,  0, %000000000001, %100011010101, %00000011, %00000001)
+  OpCode_Add("RCR",      0,  0, %000000000001, %100011010101, %00000011, %00000001)
+  ;                             %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
+  OpCode_Add("AND",      0,  0, %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("OR",       0,  0, %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("XOR",      0,  0, %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("NOT",      0,  0, %000000000000, %000000000000, %00000001, %00000001)
+  OpCode_Add("NEG",      0,  0, %000000000000, %100011010101, %00000001, %00000001)
+  ;                             %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
+  OpCode_Add("CWD",      0,  0, %000000000000, %000000000000, %00000000, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("DX"))  : OpCode_Read_Register_Add(OpCode(), Register("AX"))
+  OpCode_Add("CDQ",      0,  0, %000000000000, %000000000000, %00000000, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("EDX")) : OpCode_Read_Register_Add(OpCode(), Register("EAX"))
+  OpCode_Add("CQO",      0,  0, %000000000000, %000000000000, %00000000, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("RDX")) : OpCode_Read_Register_Add(OpCode(), Register("RAX"))
+  ;                             %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
+  OpCode_Add("PUSH",    -4, -8, %000000000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("POP",      4,  8, %000000000000, %000000000000, %00000000, %00000001)
+  OpCode_Add("CMP",      0,  0, %000000000000, %100011010101, %00000011, %00000000)
+  ;                             %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
+  OpCode_Add("JB",       0,  0, %000000000001, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNAE",     0,  0, %000000000001, %000000000000, %00000001, %00000000)
+  OpCode_Add("JC",       0,  0, %000000000001, %000000000000, %00000001, %00000000)
+  OpCode_Add("JBE",      0,  0, %000001000001, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNA",      0,  0, %000001000001, %000000000000, %00000001, %00000000)
+  OpCode_Add("JCXZ",     0,  0, %000000000000, %000000000000, %00000001, %00000000) : OpCode_Read_Register_Add(OpCode(), Register("ECX"))
+  OpCode_Add("JECXZ",    0,  0, %000000000000, %000000000000, %00000001, %00000000) : OpCode_Read_Register_Add(OpCode(), Register("ECX"))
+  OpCode_Add("JL",       0,  0, %100010000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNGE",     0,  0, %100010000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JLE",      0,  0, %100011000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNG",      0,  0, %100011000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JMP",      0,  0, %000000000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNB",      0,  0, %000000000001, %000000000000, %00000001, %00000000)
+  OpCode_Add("JAE",      0,  0, %000000000001, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNC",      0,  0, %000000000001, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNBE",     0,  0, %000001000001, %000000000000, %00000001, %00000000)
+  OpCode_Add("JA",       0,  0, %000001000001, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNL",      0,  0, %100010000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JGE",      0,  0, %100010000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNLE",     0,  0, %100011000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JG",       0,  0, %100011000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNO",      0,  0, %100000000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNP",      0,  0, %000000000100, %000000000000, %00000001, %00000000)
+  OpCode_Add("JPO",      0,  0, %000000000100, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNS",      0,  0, %000010000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNZ",      0,  0, %000001000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNE",      0,  0, %000001000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JO",       0,  0, %000001000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JP",       0,  0, %000000000100, %000000000000, %00000001, %00000000)
+  OpCode_Add("JPE",      0,  0, %000000000100, %000000000000, %00000001, %00000000)
+  OpCode_Add("JS",       0,  0, %000010000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JZ",       0,  0, %000001000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JE",       0,  0, %000001000000, %000000000000, %00000001, %00000000)
+  ;                             %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
+  OpCode_Add("NOP",      0,  0, %000000000000, %000000000000, %00000000, %00000000)
+  OpCode_Add("RET",      0,  0, %000000000000, %000000000000, %00000001, %00000000)
   
   ; ################################################### Data Sections ###############################################
   
 EndModule
-; IDE Options = PureBasic 5.40 LTS (Windows - x64)
-; CursorPosition = 18
+; IDE Options = PureBasic 5.41 LTS Beta 1 (Windows - x64)
+; CursorPosition = 1129
+; FirstLine = 1116
 ; Folding = ----
 ; EnableUnicode
 ; EnableXP

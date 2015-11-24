@@ -1,4 +1,4 @@
-Optimizer
+PB-Optimizer
 =====
 
 This is going to be an optimizer for the FAsm output of PureBasic.

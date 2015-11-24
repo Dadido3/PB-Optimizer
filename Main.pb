@@ -1,6 +1,6 @@
 ﻿; ##################################################### License / Copyright #########################################
 ; 
-;     Optimizer
+;     PB-Optimizer
 ;     Copyright (C) 2015  David Vogel
 ; 
 ;     This program is free software; you can redistribute it and/or modify
@@ -87,7 +87,7 @@ Module Main
   
   Filename = ProgramParameter(0)
   
-  ;CopyFile(Filename, "C:\Users\David Vogel\Desktop\Original Output.asm")
+  ;CopyFile(Filename, "C:\Users\David Vogel\Desktop\PureBasic.asm")
   
   ;File = ReadFile(#PB_Any, Filename)
   File = ReadFile(#PB_Any, "Test/PureBasic.asm")
@@ -98,7 +98,7 @@ Module Main
   EndIf
   
   ; #### Optimize test
-  Optimizer_Test::Optimize(*Assembler_File)
+  ;Optimizer_Test::Optimize(*Assembler_File)
   
   ;File = CreateFile(#PB_Any, Filename)
   ;If File
@@ -154,7 +154,8 @@ Module Main
   ; ################################################### Data Sections ###############################################
   
 EndModule
-; IDE Options = PureBasic 5.40 LTS (Windows - x64)
-; CursorPosition = 4
+; IDE Options = PureBasic 5.41 LTS Beta 1 (Windows - x64)
+; CursorPosition = 110
+; FirstLine = 72
 ; EnableUnicode
 ; EnableXP

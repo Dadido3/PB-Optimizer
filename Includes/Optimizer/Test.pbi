@@ -1,6 +1,6 @@
 ﻿; ##################################################### License / Copyright #########################################
 ; 
-;     Optimizer
+;     PB-Optimizer
 ;     Copyright (C) 2015  David Vogel
 ; 
 ;     This program is free software; you can redistribute it and/or modify
@@ -75,7 +75,7 @@ Module Optimizer_Test
     
     ForEach *Assembler_File\Line_Container\Line()
       If Not *Assembler_File\Line_Container\Line()\Flag & Assembler::#Line_Flag_Execute And *Assembler_File\Line_Container\Line()\Type = Assembler::#Line_Type_Instruction
-        *Assembler_File\Line_Container\Line()\Type = Assembler::#Line_Type_Raw
+        ;*Assembler_File\Line_Container\Line()\Type = Assembler::#Line_Type_Raw
         *Assembler_File\Line_Container\Line()\Raw_Minus_Label = "; " + *Assembler_File\Line_Container\Line()\Raw_Minus_Label
       EndIf
     Next
@@ -87,8 +87,9 @@ Module Optimizer_Test
   ; ################################################### Data Sections ###############################################
   
 EndModule
-; IDE Options = PureBasic 5.40 LTS (Windows - x64)
-; CursorPosition = 18
+; IDE Options = PureBasic 5.41 LTS Beta 1 (Windows - x64)
+; CursorPosition = 77
+; FirstLine = 39
 ; Folding = -
 ; EnableUnicode
 ; EnableXP
