@@ -7,7 +7,7 @@
   <section name="data">
     <explorer view="" pattern="0"/>
     <log show="1"/>
-    <lastopen date="2015-11-25 00:14" user="David Vogel" host="DAVIDS"/>
+    <lastopen date="2015-11-25 00:39" user="David Vogel" host="DAVIDS"/>
   </section>
   <section name="files">
     <file name="Includes\Assembler.pbi">

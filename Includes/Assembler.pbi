@@ -174,6 +174,8 @@ DeclareModule Assembler
     #Architecture_x86_64
   EndEnumeration
   
+  #Stack_Pointer_Invalid = 2147483647
+  
   ; ################################################### Structures ##################################################
   Structure Dependency
     *Influencer.Line              ; The line (instruction) which influences the data of the *Influencee
@@ -1114,41 +1116,60 @@ Module Assembler
     PopListPosition(*Line_Container\Line())
   EndProcedure
   
-  Procedure Line_Calculate_Stack(*Line_Container.Line_Container, *Line.Line)
+  ; #### Calculates the stack pointer for the *Line, depending on the previous lines
+  ; #### Result: #True: There was a change of the stack pointer or the validity of the data
+  Procedure Line_Calculate_Stack(*Line_Container.Line_Container, *Line.Line, Only_Invalidate=#False)
     Protected Stack_Pointer.i
-    Protected Found.i
+    Protected Valid
+    Protected Change
     
-    If *Line\Flag & #Line_Flag_SP_Calculated
-      ProcedureReturn #True
-    EndIf
-    
-    ; #### Get the stack position of the previous line, but only if they don't contradict each other!
-    ForEach *Line\Prev_Line()
+    ; #### Get the stack position of the previous lines, but only if they don't contradict each other!
+    If FirstElement(*Line\Prev_Line())
+      
+      Stack_Pointer = *Line\Prev_Line()\Stack_Pointer
       If *Line\Prev_Line()\Flag & #Line_Flag_SP_Calculated
-        If Found
-          If Not Stack_Pointer = *Line\Prev_Line()\Stack_Pointer
-            ProcedureReturn #False ; TODO: When there is a contradiction, clear all following stack pointer values
-          EndIf
-        Else
-          Stack_Pointer = *Line\Prev_Line()\Stack_Pointer
-          Found = #True
+        If Not Only_Invalidate
+          Valid = #True
         EndIf
       EndIf
-    Next
-    
-    ; #### Fail if there are previous elements, but there isn't any calculated stack pointer
-    If Not Found And ListSize(*Line\Prev_Line())
-      ProcedureReturn #False
+      
+      While NextElement(*Line\Prev_Line())
+        If *Line\Prev_Line()\Flag & #Line_Flag_SP_Calculated
+          If Not Only_Invalidate
+            Valid = #True
+          EndIf
+        EndIf
+        If Stack_Pointer <> *Line\Prev_Line()\Stack_Pointer
+          Valid = #False
+          Break
+        EndIf
+      Wend
+      
+    ElseIf Not Only_Invalidate
+      
+      Valid = #True
+      
     EndIf
     
     If *Line\OpCode
       
-      ; #### In case of a subroutine call stop calculating the stack TODO: Gather informations from subroutines, and use it 
+      ; #### In case of a subroutine, stop calculating the stack TODO: Gather informations from subroutines, and use it 
       If *Line\OpCode\Mnemonic = "CALL"
-        ProcedureReturn #False
+        Valid = #False
       EndIf
       
-      ; #### Apply change to the stack pointer
+      ; #### RET can change the stack, too
+      If *Line\OpCode\Mnemonic = "RET"
+        If SelectElement(*Line\Operand(), 0)
+          If *Line\Operand()\Address\Type = #Address_Type_Immediate_Value
+            Stack_Pointer + Val(*Line\Operand()\Address\Value)
+          Else
+            Valid = #False
+          EndIf
+        EndIf
+      EndIf
+      
+      ; #### Apply delta values to the stack pointer
       Select *Line_Container\Architecture
         Case #Architecture_x86
           Stack_Pointer + *Line\OpCode\Stack_Delta_x86
@@ -1167,18 +1188,18 @@ Module Assembler
                 If SelectElement(*Line\Operand(), 1) And *Line\Operand()\Address\Type = #Address_Type_Immediate_Value
                   Stack_Pointer - Val(*Line\Operand()\Address\Value)
                 Else
-                  ProcedureReturn #False
+                  Valid = #False
                 EndIf
                 
               Case "ADD"
                 If SelectElement(*Line\Operand(), 1) And *Line\Operand()\Address\Type = #Address_Type_Immediate_Value
                   Stack_Pointer + Val(*Line\Operand()\Address\Value)
                 Else
-                  ProcedureReturn #False
+                  Valid = #False
                 EndIf
                 
               Default
-                ProcedureReturn #False
+                Valid = #False
                 
             EndSelect
           EndIf
@@ -1187,15 +1208,26 @@ Module Assembler
       
     EndIf
     
-    *Line\Flag | #Line_Flag_SP_Calculated
+    If *Line\Flag & #Line_Flag_SP_Calculated <> Valid * #Line_Flag_SP_Calculated
+      Change = #True
+    ElseIf *Line\Stack_Pointer <> Stack_Pointer
+      Change = #True
+    EndIf
+    
+    If Valid
+      *Line\Flag | #Line_Flag_SP_Calculated
+    Else
+      *Line\Flag & ~#Line_Flag_SP_Calculated
+    EndIf
+    
     *Line\Stack_Pointer = Stack_Pointer
     
-    ProcedureReturn #True
+    ProcedureReturn Change
   EndProcedure
   
   Procedure Line_Calculate_Stack_Tree(*Line_Container.Line_Container, *Start_Line.Line)
     Protected NewList Line_Iteration.Line_Iteration()
-    Protected *Current_Line.Line
+    Protected *Current_Line.Line, Current_Flags
     
     PushListPosition(*Line_Container\Line())
     
@@ -1204,19 +1236,20 @@ Module Assembler
       
     While FirstElement(Line_Iteration())
       *Current_Line = Line_Iteration()\Line
+      Current_Flags = Line_Iteration()\Flags
       DeleteElement(Line_Iteration())
       
-      Debug *Current_Line\Raw
-      
-      If Not Line_Calculate_Stack(*Line_Container, *Current_Line)
+      If Not Line_Calculate_Stack(*Line_Container, *Current_Line, Current_Flags)
         Continue
       EndIf
       
       ForEach *Current_Line\Next_Line()
-        If Not *Current_Line\Next_Line()\Flag & #Line_Flag_SP_Calculated
-          LastElement(Line_Iteration())
-          AddElement(Line_Iteration())
-          Line_Iteration()\Line = *Current_Line\Next_Line()
+        LastElement(Line_Iteration())
+        AddElement(Line_Iteration())
+        Line_Iteration()\Line = *Current_Line\Next_Line()
+        
+        If Not *Current_Line\Flag & #Line_Flag_SP_Calculated
+          Line_Iteration()\Flags = #True
         EndIf
       Next
       
@@ -1457,6 +1490,7 @@ Module Assembler
     While Eof(File) = #False
       AddElement(*Assembler_File\Line_Container\Line())
       *Assembler_File\Line_Container\Line()\Raw = ReadString(File, #PB_Ascii)
+      *Assembler_File\Line_Container\Line()\Stack_Pointer = #Stack_Pointer_Invalid
     Wend
     
     ; #### Define the architecture
@@ -1880,8 +1914,8 @@ Module Assembler
   
 EndModule
 ; IDE Options = PureBasic 5.41 LTS Beta 1 (Windows - x64)
-; CursorPosition = 1129
-; FirstLine = 1116
+; CursorPosition = 1152
+; FirstLine = 1141
 ; Folding = ----
 ; EnableUnicode
 ; EnableXP

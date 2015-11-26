@@ -201,11 +201,14 @@ Module Visualizer
         Y_M = Line_Reference()\Line_Number * (#Text_Height + #Text_Line_Spacing)  * Canvas\Zoom + Canvas\Offset_Y
         If Y_M >= - #Text_Height * Canvas\Zoom And Y_M < Height
           
-          If Line_Reference()\Line\Flag & Assembler::#Line_Flag_SP_Calculated
+          If Line_Reference()\Line\Stack_Pointer <> Assembler::#Stack_Pointer_Invalid
             X_M = -15 * Canvas\Zoom + Canvas\Offset_X
             MovePathCursor(X_M, Y_M + #Text_Height * Canvas\Zoom)
-            
-            VectorSourceColor(RGBA(255,255,255,127))
+            If Line_Reference()\Line\Flag & Assembler::#Line_Flag_SP_Calculated
+              VectorSourceColor(RGBA(255,255,255,127))
+            Else
+              VectorSourceColor(RGBA(255,0,0,127))
+            EndIf
             DrawVectorText(Str(Line_Reference()\Line\Stack_Pointer))
           EndIf
           
@@ -693,8 +696,8 @@ Module Visualizer
   
 EndModule
 ; IDE Options = PureBasic 5.41 LTS Beta 1 (Windows - x64)
-; CursorPosition = 209
-; FirstLine = 168
+; CursorPosition = 211
+; FirstLine = 174
 ; Folding = --
 ; EnableUnicode
 ; EnableXP
