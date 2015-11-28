@@ -3,8 +3,8 @@ PB-Optimizer
 
 This is going to be an optimizer for the FAsm output of PureBasic.
 This includes a parser for FAsm files, an analyzer and (later) algorithms to optimize the code.
-The analyser examines the control flow and generates a list of dependencies between the instructions.
-Then, this information will be used by the optimizer.
+The analyzer examines the control flow and generates a list of dependencies between the instructions.
+Afterwards, this information can be used by the optimizer.
 
 **Planned optimizations:**
 - Removing of not executed code
