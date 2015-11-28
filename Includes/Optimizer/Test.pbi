@@ -70,16 +70,6 @@ Module Optimizer_Test
   ; ################################################### Procedures ##################################################
   Procedure Optimize(*Assembler_File.Assembler::File)
     
-    
-    
-    
-    ForEach *Assembler_File\Line_Container\Line()
-      If Not *Assembler_File\Line_Container\Line()\Flag & Assembler::#Line_Flag_Execute And *Assembler_File\Line_Container\Line()\Type = Assembler::#Line_Type_Instruction
-        ;*Assembler_File\Line_Container\Line()\Type = Assembler::#Line_Type_Raw
-        *Assembler_File\Line_Container\Line()\Raw_Minus_Label = "; " + *Assembler_File\Line_Container\Line()\Raw_Minus_Label
-      EndIf
-    Next
-    
   EndProcedure
   
   ; ################################################### Init ########################################################
@@ -88,8 +78,8 @@ Module Optimizer_Test
   
 EndModule
 ; IDE Options = PureBasic 5.41 LTS Beta 1 (Windows - x64)
-; CursorPosition = 77
-; FirstLine = 39
+; CursorPosition = 71
+; FirstLine = 29
 ; Folding = -
 ; EnableUnicode
 ; EnableXP

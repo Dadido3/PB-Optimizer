@@ -192,6 +192,8 @@ DeclareModule Assembler
     
     Size_Operator.s               ; byte, word, qword, ...
     
+    Negative.i                    ; #True: Number is negative. Used in Sub_Address() elements
+    
     ; #### #Address_Immediate_Value
     Value.s
     
@@ -277,6 +279,10 @@ DeclareModule Assembler
   Structure Line_Container
     List Line.Line()
     
+    *Entry_Point.Line
+    
+    ;List SubRoutine.SubRoutine()
+    
     Architecture.i
   EndStructure
   
@@ -288,9 +294,6 @@ DeclareModule Assembler
     
     Line_Container.Line_Container
     
-    *Entry_Point.Line
-    
-    ;List SubRoutine.SubRoutine()
   EndStructure
   
   Structure Line_Iteration
@@ -318,7 +321,7 @@ DeclareModule Assembler
   ; ################################################### Macros ######################################################
   
   ; ################################################### Declares ####################################################
-  Declare   Address_Ident_Result(*Address_A.Address, *Address_B.Address)
+  Declare   Address_Ident_Result(*Line_A.Line, *Address_A.Address, *Line_B.Line, *Address_B.Address)
   
   Declare   Operand_Parse(*Line_Container.Line_Container, *Line.Line, *Operand.Operand)
   Declare.s Operand_Compose(*Line_Container.Line_Container, *Line.Line, *Address.Address)
@@ -339,20 +342,21 @@ Module Assembler
   ; ################################################### Declares ####################################################
   
   ; ################################################### RegEx #######################################################
-  Global RegEx_Line_Raw = CreateRegularExpression(#PB_Any, "^\s*(format|extrn|public|pb_public|macro|section|align|db|file|dw|du|dd|dp|df|dq|dt|(.+\=.+))\s*", #PB_RegularExpression_NoCase)
+  Global RegEx_Line_Raw = CreateRegularExpression(#PB_Any, "^\s*(format|extrn|public|pb_public|macro|section|align|db|file|dw|du|dd|dp|df|dq|dt|rb|rw|rd|rp|rf|rq|rt|(.+\=.+))\s*", #PB_RegularExpression_NoCase)
   Global RegEx_Line_Label = CreateRegularExpression(#PB_Any, "^\s*(?<Label>[@\._a-zA-Z][@\d\._a-zA-Z]*):\s*(?<Rest>.*)")
-  Global RegEx_Line_Instruction_0 = CreateRegularExpression(#PB_Any, "^\s*(?<OpCode>[a-zA-Z]+)(;|$)")
-  Global RegEx_Line_Instruction_1 = CreateRegularExpression(#PB_Any, "^\s*(?<OpCode>[a-zA-Z]+)\s+(?<Param_0>[\'\.\[\]\s@\-\+\*\d_a-zA-Z]+)(;|$)")
-  Global RegEx_Line_Instruction_2 = CreateRegularExpression(#PB_Any, "^\s*(?<OpCode>[a-zA-Z]+)\s+(?<Param_0>[\'\.\[\]\s@\-\+\*\d_a-zA-Z]+),(?<Param_1>[\'\.\[\]\s@\-\+\*\d_a-zA-Z]+)(;|$)")
-  Global RegEx_Line_Instruction_3 = CreateRegularExpression(#PB_Any, "^\s*(?<OpCode>[a-zA-Z]+)\s+(?<Param_0>[\'\.\[\]\s@\-\+\*\d_a-zA-Z]+),(?<Param_1>[\'\.\[\]\s@\-\+\*\d_a-zA-Z]+),(?<Param_2>[\'\.\[\]\s@\-\+\*\d_a-zA-Z]+)(;|$)")
+  Global RegEx_Line_Instruction_0 = CreateRegularExpression(#PB_Any, "^\s*(?<OpCode>[a-zA-Z]+)\s+(;|$)")
+  Global RegEx_Line_Instruction_1 = CreateRegularExpression(#PB_Any, "^\s*(?<OpCode>[a-zA-Z]+)\s+(?<Param_0>[^,]+)(;|$)")
+  Global RegEx_Line_Instruction_2 = CreateRegularExpression(#PB_Any, "^\s*(?<OpCode>[a-zA-Z]+)\s+(?<Param_0>[^,]+),(?<Param_1>[^,]+)(;|$)")
+  Global RegEx_Line_Instruction_3 = CreateRegularExpression(#PB_Any, "^\s*(?<OpCode>[a-zA-Z]+)\s+(?<Param_0>[^,]+),(?<Param_1>[^,]+),(?<Param_2>[^,]+)(;|$)")
   
-  Global RegEx_Operand_Size_Operator = CreateRegularExpression(#PB_Any, "^\s*(?<Size_Operator>byte|word|dword|fword|pword|qword|tbyte|tword|dqword|xword|qqword|yword)\s+(?<Rest>.*)", #PB_RegularExpression_NoCase)
-  Global RegEx_Operand_Value = CreateRegularExpression(#PB_Any, "^\s*(?<Value>[\+\-]*[\d]+)")
+  Global RegEx_Operand_Size_Operator = CreateRegularExpression(#PB_Any, "^\s*(?<Size_Operator>byte|word|dword|fword|pword|qword|tbyte|tword|dqword|xword|qqword|yword)\s+(?<Rest>.+)", #PB_RegularExpression_NoCase)
+  Global RegEx_Operand_Value = CreateRegularExpression(#PB_Any, "^\s*(?<Value>[\+\-]*\s*(?:0x[\da-fA-F]+|\$[\da-fA-F]+|[\da-fA-F]+h|[\d]+)?)\s*$")
   Global RegEx_Operand_Memory = CreateRegularExpression(#PB_Any, "^\s*\[(?<Address>.+)\]")
+  Global RegEx_Operand_Memory_Summand = CreateRegularExpression(#PB_Any, "(?<Operator>\+|\-|^)\s*(?<Operand>.+?)\s*(?=\+|\-|$)")
   
   ; ################################################### Procedures ##################################################
   ; #### Check if two addresses point to the same entity and therefore can influence each other. (like eax and ax)
-  Procedure Address_Conjugate(*Address_A.Address, *Address_B.Address)
+  Procedure Address_Conjugate(*Line_A.Line, *Address_A.Address, *Line_B.Line, *Address_B.Address)
     Repeat
       
       Select *Address_A\Type
@@ -417,7 +421,7 @@ Module Assembler
                 ResetList(*Address_A\Sub_Address())
                 ResetList(*Address_B\Sub_Address())
                 While NextElement(*Address_A\Sub_Address()) And NextElement(*Address_B\Sub_Address())
-                  If Not Address_Ident_Result(*Address_A\Sub_Address(), *Address_B\Sub_Address())
+                  If Not Address_Ident_Result(*Line_A, *Address_A\Sub_Address(), *Line_B, *Address_B\Sub_Address())
                     ProcedureReturn #False
                   EndIf
                 Wend
@@ -444,7 +448,9 @@ Module Assembler
     ProcedureReturn #False
   EndProcedure
   
-  Procedure Address_Ident_Result(*Address_A.Address, *Address_B.Address)
+  Procedure Address_Ident_Result(*Line_A.Line, *Address_A.Address, *Line_B.Line, *Address_B.Address)
+    Protected Found
+    
     Repeat
       
       Select *Address_A\Type
@@ -496,8 +502,50 @@ Module Assembler
           Select *Address_B\Type
             Case #Address_Type_Register
               If *Address_A\Register = *Address_B\Register
-                ; TODO: Check if the register values are identical
-                ProcedureReturn #False
+                ; #### Registers have the same value when all dependencies are the same
+                
+                If Not *Line_A Or Not *Line_B
+                  ProcedureReturn #False
+                EndIf
+                
+                If *Line_A = *Line_B
+                  ProcedureReturn #True
+                EndIf
+                
+                ForEach *Line_A\Dependency()
+                  If *Line_A\Dependency()\Influencee_Address = *Address_A
+                    Found = #False
+                    ForEach *Line_B\Dependency()
+                      If *Line_B\Dependency()\Influencee_Address = *Address_B
+                        If *Line_A\Dependency()\Influencer = *Line_B\Dependency()\Influencer
+                          Found = #True
+                          Break
+                        EndIf
+                      EndIf
+                    Next
+                    If Not Found
+                      ProcedureReturn #False
+                    EndIf
+                  EndIf
+                Next
+                ForEach *Line_B\Dependency()
+                  If *Line_B\Dependency()\Influencee_Address = *Address_B
+                    Found = #False
+                    ForEach *Line_A\Dependency()
+                      If *Line_A\Dependency()\Influencee_Address = *Address_A
+                        If *Line_A\Dependency()\Influencer = *Line_B\Dependency()\Influencer
+                          Found = #True
+                          Break
+                        EndIf
+                      EndIf
+                    Next
+                    If Not Found
+                      ProcedureReturn #False
+                    EndIf
+                  EndIf
+                Next
+                
+                ProcedureReturn #True
               EndIf
               ProcedureReturn #False
               
@@ -623,8 +671,7 @@ Module Assembler
   
   Procedure Operand_Parse(*Line_Container.Line_Container, *Line.Line, *Operand.Operand)
     Protected String.s = *Operand\Raw
-    Protected Temp_String.s, String_Field.s
-    Protected i
+    Protected Temp_String.s, String_Operand.s, String_Operator.s
     Protected *Label_Line.Line
     
     ; #### Check if there is a size operator
@@ -646,57 +693,65 @@ Module Assembler
     If ExamineRegularExpression(RegEx_Operand_Memory, String) And NextRegularExpressionMatch(RegEx_Operand_Memory)
       *Operand\Address\Type = #Address_Type_Memory
       Temp_String = RegularExpressionNamedGroup(RegEx_Operand_Memory, "Address")
-      For i = 1 To CountString(Temp_String, "+")+1
-        String_Field = Trim(StringField(Temp_String, i, "+"))
-        
-        ; #### Check if field is a register (with multiplicator "EAX * 4")
-        If FindMapElement(Register(), UCase(Trim(StringField(String_Field,1,"*"))))
+      
+      If ExamineRegularExpression(RegEx_Operand_Memory_Summand, Temp_String)
+        While NextRegularExpressionMatch(RegEx_Operand_Memory_Summand)
+          String_Operator = RegularExpressionNamedGroup(RegEx_Operand_Memory_Summand, "Operator")
+          String_Operand = RegularExpressionNamedGroup(RegEx_Operand_Memory_Summand, "Operand")
+          
           AddElement(*Operand\Address\Sub_Address())
-          *Operand\Address\Sub_Address()\Type = #Address_Type_Register
-          *Operand\Address\Sub_Address()\Register = Register()
-          If Trim(StringField(String_Field,2,"*"))
-            *Operand\Address\Sub_Address()\Multiplicator = Val(StringField(String_Field,2,"*"))
+          If String_Operator = "-"
+            *Operand\Address\Sub_Address()\Negative = #True
           Else
-            *Operand\Address\Sub_Address()\Multiplicator = 1
+            *Operand\Address\Sub_Address()\Negative = #False
           EndIf
-          Continue
-        EndIf
-        
-        ; #### Check if field is a register (with multiplicator "4 * EAX") ; TODO: Simplify the parsing of registers
-        If FindMapElement(Register(), UCase(Trim(StringField(String_Field,2,"*"))))
-          AddElement(*Operand\Address\Sub_Address())
-          *Operand\Address\Sub_Address()\Type = #Address_Type_Register
-          *Operand\Address\Sub_Address()\Register = Register()
-          If Trim(StringField(String_Field,1,"*"))
-            *Operand\Address\Sub_Address()\Multiplicator = Val(StringField(String_Field,1,"*"))
-          Else
-            *Operand\Address\Sub_Address()\Multiplicator = 1
+          
+          ; #### Check if field is a register (with multiplicator "EAX * 4")
+          If FindMapElement(Register(), UCase(Trim(StringField(String_Operand,1,"*"))))
+            *Operand\Address\Sub_Address()\Type = #Address_Type_Register
+            *Operand\Address\Sub_Address()\Register = Register()
+            If Trim(StringField(String_Operand,2,"*"))
+              *Operand\Address\Sub_Address()\Multiplicator = Val(StringField(String_Operand,2,"*"))
+            Else
+              *Operand\Address\Sub_Address()\Multiplicator = 1
+            EndIf
+            Continue
           EndIf
-          Continue
-        EndIf
-        
-        ; #### Check if field is a label
-        *Label_Line = Label_Get(*Line_Container, *Line, String_Field)
-        If *Label_Line
-          AddElement(*Operand\Address\Sub_Address())
+          
+          ; #### Check if field is a register (with multiplicator "4 * EAX") ; TODO: Simplify the parsing of registers
+          If FindMapElement(Register(), UCase(Trim(StringField(String_Operand,2,"*"))))
+            *Operand\Address\Sub_Address()\Type = #Address_Type_Register
+            *Operand\Address\Sub_Address()\Register = Register()
+            If Trim(StringField(String_Operand,1,"*"))
+              *Operand\Address\Sub_Address()\Multiplicator = Val(StringField(String_Operand,1,"*"))
+            Else
+              *Operand\Address\Sub_Address()\Multiplicator = 1
+            EndIf
+            Continue
+          EndIf
+          
+          ; #### Check if field is a label
+          *Label_Line = Label_Get(*Line_Container, *Line, String_Operand)
+          If *Label_Line
+            *Operand\Address\Sub_Address()\Type = #Address_Type_Immediate_Label
+            *Operand\Address\Sub_Address()\Label_Line = *Label_Line
+            Continue
+          EndIf
+          
+          ; #### Check if field is a number
+          If ExamineRegularExpression(RegEx_Operand_Value, String_Operand) And NextRegularExpressionMatch(RegEx_Operand_Value)
+            *Operand\Address\Sub_Address()\Type = #Address_Type_Immediate_Value
+            *Operand\Address\Sub_Address()\Value = RegularExpressionNamedGroup(RegEx_Operand_Value, "Value")
+            Continue
+          EndIf
+          
+          ; #### Set it to #Address_Type_Immediate_Label, without line reference
+          
           *Operand\Address\Sub_Address()\Type = #Address_Type_Immediate_Label
-          *Operand\Address\Sub_Address()\Label_Line = *Label_Line
-          Continue
-        EndIf
-        
-        ; #### Check if field is a number
-        If ExamineRegularExpression(RegEx_Operand_Value, String_Field) And NextRegularExpressionMatch(RegEx_Operand_Value)
-          AddElement(*Operand\Address\Sub_Address())
-          *Operand\Address\Sub_Address()\Type = #Address_Type_Immediate_Value
-          *Operand\Address\Sub_Address()\Value = RegularExpressionNamedGroup(RegEx_Operand_Value, "Value")
-          Continue
-        EndIf
-        
-        ; #### Set it to #Address_Type_Immediate_Label, without line reference
-        AddElement(*Operand\Address\Sub_Address())
-        *Operand\Address\Sub_Address()\Type = #Address_Type_Immediate_Label
-        *Operand\Address\Sub_Address()\Label_Raw = String_Field
-      Next
+          *Operand\Address\Sub_Address()\Label_Raw = String_Operand
+        Wend
+      EndIf
+
       ProcedureReturn #True
     EndIf
     
@@ -772,9 +827,9 @@ Module Assembler
         EndIf
         If *Address\Register
           If *Address\Multiplicator > 1
-            String + *Address\Register\Name + "*" + Str(*Address\Multiplicator)
+            String + LCase(*Address\Register\Name) + "*" + Str(*Address\Multiplicator)
           Else
-            String + *Address\Register\Name
+            String + LCase(*Address\Register\Name)
           EndIf
         Else
           String + "<Unknown_Register>"
@@ -786,10 +841,12 @@ Module Assembler
         EndIf
         String + "["
         ForEach *Address\Sub_Address()
-          String + Operand_Compose(*Line_Container, *Line, *Address\Sub_Address())
-          If ListIndex(*Address\Sub_Address()) < ListSize(*Address\Sub_Address())-1
-            String + " + "
+          If *Address\Sub_Address()\Negative
+            String + "-"
+          ElseIf ListIndex(*Address\Sub_Address()) > 0
+            String + "+"
           EndIf
+          String + Operand_Compose(*Line_Container, *Line, *Address\Sub_Address())
         Next
         String + "]"
         
@@ -916,15 +973,13 @@ Module Assembler
               *Line\Dependency()\Influencee = *Line
               *Line\Dependency()\Influencee_Address = Read_Address()\Address
               *Line\Dependency()\Virtual = Read_Address()\Virtual
-              If Not Read_Address()\Virtual
-                AddElement(*Current_Line\Influence())
-                *Current_Line\Influence() = *Line\Dependency()
-              EndIf
+              AddElement(*Current_Line\Influence())
+              *Current_Line\Influence() = *Line\Dependency()
             EndIf
             
             ; #### Search for opcode specific modifications
             ForEach *Current_Line\OpCode\Mod_Address()
-              Temp_Result = Address_Conjugate(Read_Address()\Address, *Current_Line\OpCode\Mod_Address())
+              Temp_Result = Address_Conjugate(*Line, Read_Address()\Address, *Current_Line, *Current_Line\OpCode\Mod_Address())
               If Temp_Result & Current_Flags
                 Current_Flags & ~Temp_Result
                 
@@ -935,10 +990,8 @@ Module Assembler
                 *Line\Dependency()\Influencee = *Line
                 *Line\Dependency()\Influencee_Address = Read_Address()\Address
                 *Line\Dependency()\Virtual = Read_Address()\Virtual
-                If Not Read_Address()\Virtual
-                  AddElement(*Current_Line\Influence())
-                  *Current_Line\Influence() = *Line\Dependency()
-                EndIf
+                AddElement(*Current_Line\Influence())
+                *Current_Line\Influence() = *Line\Dependency()
                 
               EndIf
               If Not Current_Flags
@@ -953,7 +1006,7 @@ Module Assembler
             ForEach *Current_Line\OpCode\Mod_Operand()
               If SelectElement(*Current_Line\Operand(), *Current_Line\OpCode\Mod_Operand())
                 If *Current_Line\Operand()\Address
-                  Temp_Result = Address_Conjugate(Read_Address()\Address, *Current_Line\Operand()\Address)
+                  Temp_Result = Address_Conjugate(*Line, Read_Address()\Address, *Current_Line, *Current_Line\Operand()\Address)
                   If Temp_Result & Current_Flags
                     Current_Flags & ~Temp_Result
                     
@@ -964,10 +1017,8 @@ Module Assembler
                     *Line\Dependency()\Influencee = *Line
                     *Line\Dependency()\Influencee_Address = Read_Address()\Address
                     *Line\Dependency()\Virtual = Read_Address()\Virtual
-                    If Not Read_Address()\Virtual
-                      AddElement(*Current_Line\Influence())
-                      *Current_Line\Influence() = *Line\Dependency()
-                    EndIf
+                    AddElement(*Current_Line\Influence())
+                    *Current_Line\Influence() = *Line\Dependency()
                     
                   EndIf
                 EndIf
@@ -989,10 +1040,8 @@ Module Assembler
             *Line\Dependency()\Influencee = *Line
             *Line\Dependency()\Influencee_Address = Read_Address()\Address
             *Line\Dependency()\Virtual = Read_Address()\Virtual
-            If Not Read_Address()\Virtual
-              AddElement(*Current_Line\Influence())
-              *Current_Line\Influence() = *Line\Dependency()
-            EndIf
+            AddElement(*Current_Line\Influence())
+            *Current_Line\Influence() = *Line\Dependency()
             
           EndIf
           
@@ -1009,10 +1058,8 @@ Module Assembler
             *Line\Dependency()\Influencee = *Line
             *Line\Dependency()\Influencee_Address = Read_Address()\Address
             *Line\Dependency()\Virtual = Read_Address()\Virtual
-            If Not Read_Address()\Virtual
-              AddElement(*Current_Line\Influence())
-              *Current_Line\Influence() = *Line\Dependency()
-            EndIf
+            AddElement(*Current_Line\Influence())
+            *Current_Line\Influence() = *Line\Dependency()
           Else
             ; #### Add the previous lines to the queue
             ForEach *Current_Line\Prev_Line()
@@ -1263,6 +1310,7 @@ Module Assembler
   Procedure Line_Delete(*Line_Container.Line_Container, *Line.Line)
     NewList *Recalculate_Dependency.Line()
     NewList *Recalculate_Flow.Line()
+    NewList *Recalculate_Stack.Line()
     
     If ChangeCurrentElement(*Line_Container\Line(), *Line)
       
@@ -1271,8 +1319,10 @@ Module Assembler
         If *Line\Dependency()\Influencer
           ForEach *Line\Dependency()\Influencer\Influence()
             If *Line\Dependency()\Influencer\Influence() = *Line\Dependency()
-              AddElement(*Recalculate_Dependency())
-              *Recalculate_Dependency() = *Line\Dependency()\Influencer
+              If *Line\Dependency()\Influencer <> *Line
+                AddElement(*Recalculate_Dependency())
+                *Recalculate_Dependency() = *Line\Dependency()\Influencer
+              EndIf
               DeleteElement(*Line\Dependency()\Influencer\Influence())
               Break
             EndIf
@@ -1281,12 +1331,31 @@ Module Assembler
         DeleteElement(*Line\Dependency())
       Next
       
+      ; #### Remove influences
+      ForEach *Line\Influence()
+        If *Line\Influence()\Influencee
+          ForEach *Line\Influence()\Influencee\Dependency()
+            If *Line\Influence()\Influencee\Dependency() = *Line\Influence()
+              If *Line\Influence()\Influencee <> *Line
+                AddElement(*Recalculate_Dependency())
+                *Recalculate_Dependency() = *Line\Influence()\Influencee
+              EndIf
+              DeleteElement(*Line\Influence()\Influencee\Dependency())
+              Break
+            EndIf
+          Next
+        EndIf
+        DeleteElement(*Line\Influence())
+      Next
+      
       ; #### Remove next line reference
       ForEach *Line\Next_Line()
         ForEach *Line\Next_Line()\Prev_Line()
           If *Line\Next_Line()\Prev_Line() = *Line
             AddElement(*Recalculate_Flow())
             *Recalculate_Flow() = *Line\Next_Line()
+            AddElement(*Recalculate_Stack())
+            *Recalculate_Stack() = *Line\Next_Line()
             DeleteElement(*Line\Next_Line()\Prev_Line())
             Break
           EndIf
@@ -1308,16 +1377,34 @@ Module Assembler
       Next
       
       ; #### Delete all label references
-      PushListPosition(*Line_Container\Line())
-      ForEach *Line_Container\Line()
-        ForEach *Line_Container\Line()\Operand()
-          If *Line_Container\Line()\Operand()\Address\Type = #Address_Type_Immediate_Label
-            *Line_Container\Line()\Operand()\Address\Label_Line = #Null
-            *Line_Container\Line()\Operand()\Address\Label_Raw = "<REFERENCE_REMOVED>"
+      If *Line_Container\Line()\Label_Type
+        PushListPosition(*Line_Container\Line())
+        ForEach *Line_Container\Line()
+          ; #### Search in operands of instructions
+          ForEach *Line_Container\Line()\Operand()
+            If *Line_Container\Line()\Operand()\Address\Type = #Address_Type_Immediate_Label And *Line_Container\Line()\Operand()\Address\Label_Line = *Line
+              *Line_Container\Line()\Operand()\Address\Label_Line = #Null
+              *Line_Container\Line()\Operand()\Address\Label_Raw = "<REFERENCE_REMOVED>"
+            EndIf
+            ForEach *Line_Container\Line()\Operand()\Address\Sub_Address()
+              If *Line_Container\Line()\Operand()\Address\Sub_Address()\Type = #Address_Type_Immediate_Label And *Line_Container\Line()\Operand()\Address\Sub_Address()\Label_Line = *Line
+                *Line_Container\Line()\Operand()\Address\Sub_Address()\Label_Line = #Null
+                *Line_Container\Line()\Operand()\Address\Sub_Address()\Label_Raw = "<REFERENCE_REMOVED>"
+              EndIf
+            Next
+          Next
+          ; #### Search in references of local labels
+          If *Line_Container\Line()\Label_Parent_Line = *Line
+            *Line_Container\Line()\Label_Parent_Line = #Null
           EndIf
         Next
-      Next
-      PopListPosition(*Line_Container\Line())
+        PopListPosition(*Line_Container\Line())
+      EndIf
+      
+      ; #### Delete the entry point reference
+      If *Line_Container\Entry_Point = *Line
+        *Line_Container\Entry_Point = #Null
+      EndIf
       
       DeleteElement(*Line_Container\Line())
       
@@ -1328,7 +1415,12 @@ Module Assembler
       
       ; #### Recalculate dependencies
       ForEach *Recalculate_Dependency()
-        Line_Calculate_Flow(*Line_Container, *Recalculate_Dependency())
+        Line_Calculate_Dependencies(*Line_Container, *Recalculate_Dependency())
+      Next
+      
+      ; #### Recalculate stack
+      ForEach *Recalculate_Stack()
+        Line_Calculate_Stack_Tree(*Line_Container, *Recalculate_Stack())
       Next
       
     EndIf
@@ -1511,12 +1603,12 @@ Module Assembler
     ; #### Find entry point
     ForEach *Assembler_File\Line_Container\Line()
       If *Assembler_File\Line_Container\Line()\Label = "PureBasicStart"
-        *Assembler_File\Entry_Point = *Assembler_File\Line_Container\Line()
+        *Assembler_File\Line_Container\Entry_Point = *Assembler_File\Line_Container\Line()
         Break
       EndIf
     Next
     
-    If Not *Assembler_File\Entry_Point
+    If Not *Assembler_File\Line_Container\Entry_Point
       File_Free(*Assembler_File)
       ProcedureReturn #Null
     EndIf
@@ -1527,7 +1619,7 @@ Module Assembler
     Next
     
     ; #### Calculate the program flow (Including the execute flag)
-    Line_Calculate_Flow_Tree(*Assembler_File\Line_Container, *Assembler_File\Entry_Point)
+    Line_Calculate_Flow_Tree(*Assembler_File\Line_Container, *Assembler_File\Line_Container\Entry_Point)
     
     ; #### DEBUG: also calculate the flow starting from labels containing "_Procedure"
     ForEach *Assembler_File\Line_Container\Line()
@@ -1537,13 +1629,12 @@ Module Assembler
     Next
     
     ; #### Calculate the stack
-    Line_Calculate_Stack_Tree(*Assembler_File\Line_Container, *Assembler_File\Entry_Point)
+    Line_Calculate_Stack_Tree(*Assembler_File\Line_Container, *Assembler_File\Line_Container\Entry_Point)
     ForEach *Assembler_File\Line_Container\Line()
       If *Assembler_File\Line_Container\Line()\Label_Type = #Label_Type_Global And FindString(*Assembler_File\Line_Container\Line()\Label, "_Procedure")
         Line_Calculate_Stack_Tree(*Assembler_File\Line_Container, *Assembler_File\Line_Container\Line())
       EndIf
     Next
-    
     
     ; #### Calculate dependencies
     ForEach *Assembler_File\Line_Container\Line()
@@ -1566,17 +1657,17 @@ Module Assembler
       String = *Assembler_File\Line_Container\Line()\Raw
       
       ; ##### Debug strings
-      ForEach *Assembler_File\Line_Container\Line()\Dependency()
-        String + " ;Dep: " + *Assembler_File\Line_Container\Line()\Dependency()\Influencer\Raw
-      Next
+      ;ForEach *Assembler_File\Line_Container\Line()\Dependency()
+      ;  String + " ;Dep: " + *Assembler_File\Line_Container\Line()\Dependency()\Influencer\Raw
+      ;Next
       
       ;ForEach *Assembler_File\Line_Container\Line()\Next_Line()
       ;  String + " ;Next: " + *Assembler_File\Line_Container\Line()\Next_Line()\Raw
       ;Next
       
-      If *Assembler_File\Line_Container\Line()\Flag & #Line_Flag_Execute
-        String + " ;EXEC."
-      EndIf
+      ;If *Assembler_File\Line_Container\Line()\Flag & #Line_Flag_Execute
+      ;  String + " ;EXEC."
+      ;EndIf
       
       WriteStringN(File, String, #PB_Ascii)
     Next
@@ -1654,13 +1745,9 @@ Module Assembler
     ; #### Stack delta
     OpCode()\Stack_Delta_x86 = Stack_Delta_x86
     OpCode()\Stack_Delta_x86_64 = Stack_Delta_x86_64
-    If OpCode()\Stack_Delta_x86
+    If OpCode()\Stack_Delta_x86 Or OpCode()\Stack_Delta_x86_64
       OpCode_Mod_Register_Add(OpCode(), Register("ESP"))
       OpCode_Read_Register_Add(OpCode(), Register("ESP"))
-    EndIf
-    If OpCode()\Stack_Delta_x86_64
-      OpCode_Mod_Register_Add(OpCode(), Register("RSP"))
-      OpCode_Read_Register_Add(OpCode(), Register("RSP"))
     EndIf
     
   EndProcedure
@@ -1914,8 +2001,8 @@ Module Assembler
   
 EndModule
 ; IDE Options = PureBasic 5.41 LTS Beta 1 (Windows - x64)
-; CursorPosition = 1152
-; FirstLine = 1141
+; CursorPosition = 687
+; FirstLine = 671
 ; Folding = ----
 ; EnableUnicode
 ; EnableXP

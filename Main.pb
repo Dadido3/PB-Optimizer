@@ -35,11 +35,14 @@
 ; 
 ; 
 ; ##################################################### External Includes ###########################################
+XIncludeFile "Includes/Helper.pbi"
 
 ; ##################################################### Includes ####################################################
 
 DeclareModule Main
   EnableExplicit
+  
+  UseModule Helper
   
   ; ################################################### Prototypes ##################################################
   
@@ -48,7 +51,7 @@ DeclareModule Main
   
   ; ################################################### Structures ##################################################
   Structure Main
-    
+    Path_AppData.s
   EndStructure
   
   ; ################################################### Variables ###################################################
@@ -64,6 +67,7 @@ XIncludeFile "Includes/Assembler.pbi"
 XIncludeFile "Includes/Visualizer.pbi"
 
 XIncludeFile "Includes/Optimizer/Test.pbi"
+XIncludeFile "Includes/Optimizer/PUSH_POP.pbi"
 
 Module Main
   EnableExplicit
@@ -77,6 +81,9 @@ Module Main
   ; ################################################### Initialisation ##############################################
   OpenConsole()
   
+  Main\Path_AppData = Helper::SHGetFolderPath(#CSIDL_APPDATA) + "/D3/PB-Optimizer/"
+  MakeSureDirectoryPathExists(Main\Path_AppData)
+  
   ; ################################################### Main ########################################################
   Define i
   Define Filename.s, File.i
@@ -87,10 +94,13 @@ Module Main
   
   Filename = ProgramParameter(0)
   
-  ;CopyFile(Filename, "C:\Users\David Vogel\Desktop\PureBasic.asm")
+  If Filename
+    CopyFile(Filename, Main\Path_AppData + "Latest_Original.asm")
+  Else
+    Filename = Main\Path_AppData + "Latest_Original.asm"
+  EndIf
   
-  ;File = ReadFile(#PB_Any, Filename)
-  File = ReadFile(#PB_Any, "Test/PureBasic.asm")
+  File = ReadFile(#PB_Any, Filename)
   If File
     *Assembler_File = Assembler::File_Parse(File)
     
@@ -99,13 +109,21 @@ Module Main
   
   ; #### Optimize test
   ;Optimizer_Test::Optimize(*Assembler_File)
+  Optimizer_PUSH_POP::Optimize(*Assembler_File)
   
-  ;File = CreateFile(#PB_Any, Filename)
-  ;If File
-  ;  Assembler::File_Compose(*Assembler_File, File)
-  ;  
-  ;  CloseFile(File)
-  ;EndIf
+;   If Filename
+;     File = CreateFile(#PB_Any, Filename)
+;     ;File = CreateFile(#PB_Any, Filename+".opt.asm")
+;     If File
+;      Assembler::File_Compose(*Assembler_File, File)
+;      
+;      CloseFile(File)
+;     EndIf
+;   EndIf
+;   
+;   If Filename
+;     CopyFile(Filename, Main\Path_AppData + "Latest_Optimized.asm")
+;   EndIf
   
   ; #### Visualizer
   Visualizer::Main(*Assembler_File)
@@ -155,7 +173,7 @@ Module Main
   
 EndModule
 ; IDE Options = PureBasic 5.41 LTS Beta 1 (Windows - x64)
-; CursorPosition = 110
-; FirstLine = 72
+; CursorPosition = 113
+; FirstLine = 90
 ; EnableUnicode
 ; EnableXP

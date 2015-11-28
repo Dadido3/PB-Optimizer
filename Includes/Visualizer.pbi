@@ -552,58 +552,65 @@ Module Visualizer
           
       EndSelect
       
-      ForEach Line_Reference()\Line\Operand()
-        
-        If Line_Reference()\Line\Operand()\Address\Type = Assembler::#Address_Type_Memory
-          AddElement(Line_Reference()\Element())
-          Line_Reference()\Element()\Parent = Line_Reference()
-          Line_Reference()\Element()\Address = Line_Reference()\Line\Operand()\Address
-          Line_Reference()\Element()\Text = "["
-          Line_Reference()\Element()\Color = RGBA(255,255,255,255)
+      If Line_Reference()\Line\Type = Assembler::#Line_Type_Instruction
+        ForEach Line_Reference()\Line\Operand()
           
-          ForEach Line_Reference()\Line\Operand()\Address\Sub_Address()
+          If Line_Reference()\Line\Operand()\Address\Type = Assembler::#Address_Type_Memory
             AddElement(Line_Reference()\Element())
             Line_Reference()\Element()\Parent = Line_Reference()
-            Line_Reference()\Element()\Address = Line_Reference()\Line\Operand()\Address\Sub_Address()
-            Line_Reference()\Element()\Text = Assembler::Operand_Compose(*Assembler_File\Line_Container, Line_Reference()\Line, Line_Reference()\Line\Operand()\Address\Sub_Address())
-            Select Line_Reference()\Line\Operand()\Address\Sub_Address()\Type
+            Line_Reference()\Element()\Address = Line_Reference()\Line\Operand()\Address
+            Line_Reference()\Element()\Text = "["
+            Line_Reference()\Element()\Color = RGBA(255,255,255,255)
+            
+            ForEach Line_Reference()\Line\Operand()\Address\Sub_Address()
+              If Line_Reference()\Line\Operand()\Address\Sub_Address()\Negative
+                AddElement(Line_Reference()\Element())
+                Line_Reference()\Element()\Parent = Line_Reference()
+                Line_Reference()\Element()\Text = "−"
+                Line_Reference()\Element()\Color = RGBA(255,255,255,255)
+              ElseIf ListIndex(Line_Reference()\Line\Operand()\Address\Sub_Address()) > 0
+                AddElement(Line_Reference()\Element())
+                Line_Reference()\Element()\Parent = Line_Reference()
+                Line_Reference()\Element()\Text = "+"
+                Line_Reference()\Element()\Color = RGBA(255,255,255,255)
+              EndIf
+              AddElement(Line_Reference()\Element())
+              Line_Reference()\Element()\Parent = Line_Reference()
+              Line_Reference()\Element()\Address = Line_Reference()\Line\Operand()\Address\Sub_Address()
+              Line_Reference()\Element()\Text = Assembler::Operand_Compose(*Assembler_File\Line_Container, Line_Reference()\Line, Line_Reference()\Line\Operand()\Address\Sub_Address())
+              Select Line_Reference()\Line\Operand()\Address\Sub_Address()\Type
+                Case Assembler::#Address_Type_Immediate_Value : Line_Reference()\Element()\Color = RGBA(150,255,150,255)
+                Case Assembler::#Address_Type_Immediate_Label : Line_Reference()\Element()\Color = RGBA(150,150,255,255)
+                Case Assembler::#Address_Type_Register        : Line_Reference()\Element()\Color = RGBA(255,150,150,255)
+              EndSelect
+            Next
+            
+            AddElement(Line_Reference()\Element())
+            Line_Reference()\Element()\Parent = Line_Reference()
+            Line_Reference()\Element()\Text = "]"
+            Line_Reference()\Element()\Color = RGBA(255,255,255,255)
+            
+          Else
+            
+            AddElement(Line_Reference()\Element())
+            Line_Reference()\Element()\Parent = Line_Reference()
+            Line_Reference()\Element()\Address = Line_Reference()\Line\Operand()\Address
+            Line_Reference()\Element()\Text = Assembler::Operand_Compose(*Assembler_File\Line_Container, Line_Reference()\Line, Line_Reference()\Line\Operand()\Address)
+            Select Line_Reference()\Line\Operand()\Address\Type
               Case Assembler::#Address_Type_Immediate_Value : Line_Reference()\Element()\Color = RGBA(150,255,150,255)
               Case Assembler::#Address_Type_Immediate_Label : Line_Reference()\Element()\Color = RGBA(150,150,255,255)
               Case Assembler::#Address_Type_Register        : Line_Reference()\Element()\Color = RGBA(255,150,150,255)
             EndSelect
-            If ListIndex(Line_Reference()\Line\Operand()\Address\Sub_Address()) < ListSize(Line_Reference()\Line\Operand()\Address\Sub_Address()) - 1
-              AddElement(Line_Reference()\Element())
-              Line_Reference()\Element()\Parent = Line_Reference()
-              Line_Reference()\Element()\Text = "+"
-              Line_Reference()\Element()\Color = RGBA(255,255,255,255)
-            EndIf
-          Next
+          EndIf
           
-          AddElement(Line_Reference()\Element())
-          Line_Reference()\Element()\Parent = Line_Reference()
-          Line_Reference()\Element()\Text = "]"
-          Line_Reference()\Element()\Color = RGBA(255,255,255,255)
-          
-        Else
-          
-          AddElement(Line_Reference()\Element())
-          Line_Reference()\Element()\Parent = Line_Reference()
-          Line_Reference()\Element()\Address = Line_Reference()\Line\Operand()\Address
-          Line_Reference()\Element()\Text = Assembler::Operand_Compose(*Assembler_File\Line_Container, Line_Reference()\Line, Line_Reference()\Line\Operand()\Address)
-          Select Line_Reference()\Line\Operand()\Address\Type
-            Case Assembler::#Address_Type_Immediate_Value : Line_Reference()\Element()\Color = RGBA(150,255,150,255)
-            Case Assembler::#Address_Type_Immediate_Label : Line_Reference()\Element()\Color = RGBA(150,150,255,255)
-            Case Assembler::#Address_Type_Register        : Line_Reference()\Element()\Color = RGBA(255,150,150,255)
-          EndSelect
-        EndIf
-        
-        If ListIndex(Line_Reference()\Line\Operand()) < ListSize(Line_Reference()\Line\Operand()) - 1
-          AddElement(Line_Reference()\Element())
-          Line_Reference()\Element()\Parent = Line_Reference()
-          Line_Reference()\Element()\Text = ", "
-          Line_Reference()\Element()\Color = RGBA(255,255,255,255)
-        EndIf
-      Next
+          If ListIndex(Line_Reference()\Line\Operand()) < ListSize(Line_Reference()\Line\Operand()) - 1
+            AddElement(Line_Reference()\Element())
+            Line_Reference()\Element()\Parent = Line_Reference()
+            Line_Reference()\Element()\Text = ", "
+            Line_Reference()\Element()\Color = RGBA(255,255,255,255)
+          EndIf
+        Next
+      EndIf
       
     Next
     
@@ -696,8 +703,8 @@ Module Visualizer
   
 EndModule
 ; IDE Options = PureBasic 5.41 LTS Beta 1 (Windows - x64)
-; CursorPosition = 211
-; FirstLine = 174
+; CursorPosition = 611
+; FirstLine = 580
 ; Folding = --
 ; EnableUnicode
 ; EnableXP
