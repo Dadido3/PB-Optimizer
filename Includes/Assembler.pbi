@@ -166,7 +166,18 @@ DeclareModule Assembler
     #Label_Type_Global            ; Normal Label
     #Label_Type_Global_No_Childs  ; Starting with "..", Like a global label, but it can't be a parent
     #Label_Type_Local             ; Starting with ".", and is a child of the previous global label
-    #Label_Type_Anonymous         ; Starting with "@@"
+    #Label_Type_Anonymous         ; "@@"
+  EndEnumeration
+  
+  ; #### Calling conventions
+  Enumeration
+    #SubRoutine_CC_Unknown
+    
+    #SubRoutine_CC_stdcall        ; Result: EAX Stack: RTL; Callee cleans stack;
+    #SubRoutine_CC_cdecl          ; Result: EAX Stack: RTL; Caller cleans stack;
+    
+    #SubRoutine_CC_MSFastCall     ; Result: RAX Registers: RCX/XMM0, RDX/XMM1, R8/XMM2, R9/XMM3 Stack: RTL; Caller cleans stack. Stack aligned on 16 bytes. 32 bytes shadow space on stack
+    ;#SubRoutine_CC_FastCall
   EndEnumeration
   
   Enumeration
@@ -227,8 +238,8 @@ DeclareModule Assembler
     
     Operands.i
     
-    List Read_Address.Address()   ; Addresses which are read by this instruction (Additional to the address in the operands)
-    List Mod_Address.Address()    ; Addresses which are modified by this instruction (Additional to the address in the operands)
+    List Read_Address.Address()   ; Addresses which are read by this instruction (Additional to the addresses in the operands)
+    List Mod_Address.Address()    ; Addresses which are modified by this instruction (Additional to the addresses in the operands)
     
     List Read_Operand.i()         ; Operands which read data
     List Mod_Operand.i()          ; Operands which modify data
@@ -249,6 +260,8 @@ DeclareModule Assembler
   Structure Line
     Type.i
     
+    Original_Line_Number.i        ; Line number in the original file
+    
     Raw.s
     
     Label.s
@@ -260,8 +273,8 @@ DeclareModule Assembler
     
     ; #### Type: #Line_Instruction
     *OpCode.OpCode                ; #Null when opcode unknown
+    Raw_OpCode.s                  ; Used when *OpCode = #Null.
     List Operand.Operand()
-    Raw_Instruction.s             ; Used when *OpCode = #Null. (This includes the opcode and operands)
     
     List Dependency.Dependency()
     List *Influence.Dependency()
@@ -276,6 +289,10 @@ DeclareModule Assembler
     Flag.i
   EndStructure
   
+  Structure SubRoutine
+    ;*Start_Line.Line              ; #Null, when it is external/unknown
+  EndStructure
+  
   Structure Line_Container
     List Line.Line()
     
@@ -284,10 +301,6 @@ DeclareModule Assembler
     ;List SubRoutine.SubRoutine()
     
     Architecture.i
-  EndStructure
-  
-  Structure SubRoutine
-    ;*Start_Line.Line
   EndStructure
   
   Structure File
@@ -343,8 +356,8 @@ Module Assembler
   
   ; ################################################### RegEx #######################################################
   Global RegEx_Line_Raw = CreateRegularExpression(#PB_Any, "^\s*(format|extrn|public|pb_public|macro|section|align|db|file|dw|du|dd|dp|df|dq|dt|rb|rw|rd|rp|rf|rq|rt|(.+\=.+))\s*", #PB_RegularExpression_NoCase)
-  Global RegEx_Line_Label = CreateRegularExpression(#PB_Any, "^\s*(?<Label>[@\._a-zA-Z][@\d\._a-zA-Z]*):\s*(?<Rest>.*)")
-  Global RegEx_Line_Instruction_0 = CreateRegularExpression(#PB_Any, "^\s*(?<OpCode>[a-zA-Z]+)\s+(;|$)")
+  Global RegEx_Line_Label = CreateRegularExpression(#PB_Any, "^\s*(?<Label>@@|[\._a-zA-Z][@\d\._a-zA-Z]*):\s*(?<Rest>.*)")
+  Global RegEx_Line_Instruction_0 = CreateRegularExpression(#PB_Any, "^\s*(?<OpCode>[a-zA-Z]+)(;|$)")
   Global RegEx_Line_Instruction_1 = CreateRegularExpression(#PB_Any, "^\s*(?<OpCode>[a-zA-Z]+)\s+(?<Param_0>[^,]+)(;|$)")
   Global RegEx_Line_Instruction_2 = CreateRegularExpression(#PB_Any, "^\s*(?<OpCode>[a-zA-Z]+)\s+(?<Param_0>[^,]+),(?<Param_1>[^,]+)(;|$)")
   Global RegEx_Line_Instruction_3 = CreateRegularExpression(#PB_Any, "^\s*(?<OpCode>[a-zA-Z]+)\s+(?<Param_0>[^,]+),(?<Param_1>[^,]+),(?<Param_2>[^,]+)(;|$)")
@@ -872,10 +885,6 @@ Module Assembler
       ProcedureReturn #False
     EndIf
     
-    If Not *Line\OpCode
-      ProcedureReturn #False
-    EndIf
-    
     ; #### Remove old dependencies
     ForEach *Line\Dependency()
       If *Line\Dependency()\Influencer
@@ -890,10 +899,12 @@ Module Assembler
     Next
     
     ; #### Add opcode based addresses to the address-queue
-    ForEach *Line\OpCode\Read_Address()
-      AddElement(Read_Address())
-      Read_Address()\Address = *Line\OpCode\Read_Address()
-    Next
+    If *Line\OpCode
+      ForEach *Line\OpCode\Read_Address()
+        AddElement(Read_Address())
+        Read_Address()\Address = *Line\OpCode\Read_Address()
+      Next
+    EndIf
     
     ; #### Add registers of operands with the address type #Address_Type_Memory
     ForEach *Line\Operand()
@@ -908,21 +919,33 @@ Module Assembler
     Next
     
     ; #### Add operand based addresses to the address-queue (Instruction is reading from operand)
-    ForEach *Line\OpCode\Read_Operand()
-      If SelectElement(*Line\Operand(), *Line\OpCode\Read_Operand())
-        AddElement(Read_Address())
-        Read_Address()\Address = *Line\Operand()\Address
-      EndIf
-    Next
+    If *Line\OpCode
+      ForEach *Line\OpCode\Read_Operand()
+        If SelectElement(*Line\Operand(), *Line\OpCode\Read_Operand())
+          AddElement(Read_Address())
+          Read_Address()\Address = *Line\Operand()\Address
+        EndIf
+      Next
+    EndIf
     
     ; #### Add operand based addresses to the address-queue (Instruction is writing to operand, this will be a virtual dependency)
-    ForEach *Line\OpCode\Mod_Operand()
-      If SelectElement(*Line\Operand(), *Line\OpCode\Mod_Operand())
+    If *Line\OpCode
+      ForEach *Line\OpCode\Mod_Operand()
+        If SelectElement(*Line\Operand(), *Line\OpCode\Mod_Operand())
+          AddElement(Read_Address())
+          Read_Address()\Address = *Line\Operand()\Address
+          Read_Address()\Virtual = #True
+        EndIf
+      Next
+    EndIf
+    
+    ; #### If the opcode is an unknown one, add all operands to the queue
+    If Not *Line\OpCode
+      ForEach *Line\Operand()
         AddElement(Read_Address())
         Read_Address()\Address = *Line\Operand()\Address
-        Read_Address()\Virtual = #True
-      EndIf
-    Next
+      Next
+    EndIf
     
     PushListPosition(*Line_Container\Line())
     
@@ -1032,7 +1055,7 @@ Module Assembler
             EndIf
             
           Else
-            ; #### Current line has an unknown opcode, expect anything to be changed. Add dependency
+            ; #### Current line has an unknown opcode, expect anything to be changed.
             ; #### But this doesn't mean that it is a dependency, therefore this shouldn't stop searching nor change "Current_Flags"
             AddElement(*Line\Dependency())
             *Line\Dependency()\Influencer = *Current_Line
@@ -1469,15 +1492,15 @@ Module Assembler
         *Line\Type = #Line_Type_Instruction
         If FindMapElement(OpCode(), UCase(RegularExpressionNamedGroup(RegEx_Line_Instruction_3, "OpCode"))+"@3") Or FindMapElement(OpCode(), UCase(RegularExpressionNamedGroup(RegEx_Line_Instruction_3, "OpCode")))
           *Line\OpCode = OpCode()
-          AddElement(*Line\Operand())
-          *Line\Operand()\Raw = RegularExpressionNamedGroup(RegEx_Line_Instruction_3, "Param_0")
-          AddElement(*Line\Operand())
-          *Line\Operand()\Raw = RegularExpressionNamedGroup(RegEx_Line_Instruction_3, "Param_1")
-          AddElement(*Line\Operand())
-          *Line\Operand()\Raw = RegularExpressionNamedGroup(RegEx_Line_Instruction_3, "Param_2")
         Else
-          *Line\Raw_Instruction = String
+          *Line\Raw_OpCode = UCase(RegularExpressionNamedGroup(RegEx_Line_Instruction_3, "OpCode"))
         EndIf
+        AddElement(*Line\Operand())
+        *Line\Operand()\Raw = RegularExpressionNamedGroup(RegEx_Line_Instruction_3, "Param_0")
+        AddElement(*Line\Operand())
+        *Line\Operand()\Raw = RegularExpressionNamedGroup(RegEx_Line_Instruction_3, "Param_1")
+        AddElement(*Line\Operand())
+        *Line\Operand()\Raw = RegularExpressionNamedGroup(RegEx_Line_Instruction_3, "Param_2")
         ;*Line\Raw = #Null$
         ProcedureReturn #True
       EndIf
@@ -1489,13 +1512,13 @@ Module Assembler
         *Line\Type = #Line_Type_Instruction
         If FindMapElement(OpCode(), UCase(RegularExpressionNamedGroup(RegEx_Line_Instruction_2, "OpCode"))+"@2") Or FindMapElement(OpCode(), UCase(RegularExpressionNamedGroup(RegEx_Line_Instruction_2, "OpCode")))
           *Line\OpCode = OpCode()
-          AddElement(*Line\Operand())
-          *Line\Operand()\Raw = RegularExpressionNamedGroup(RegEx_Line_Instruction_2, "Param_0")
-          AddElement(*Line\Operand())
-          *Line\Operand()\Raw = RegularExpressionNamedGroup(RegEx_Line_Instruction_2, "Param_1")
         Else
-          *Line\Raw_Instruction = String
+          *Line\Raw_OpCode = UCase(RegularExpressionNamedGroup(RegEx_Line_Instruction_2, "OpCode"))
         EndIf
+        AddElement(*Line\Operand())
+        *Line\Operand()\Raw = RegularExpressionNamedGroup(RegEx_Line_Instruction_2, "Param_0")
+        AddElement(*Line\Operand())
+        *Line\Operand()\Raw = RegularExpressionNamedGroup(RegEx_Line_Instruction_2, "Param_1")
         ;*Line\Raw = #Null$
         ProcedureReturn #True
       EndIf
@@ -1507,11 +1530,11 @@ Module Assembler
         *Line\Type = #Line_Type_Instruction
         If FindMapElement(OpCode(), UCase(RegularExpressionNamedGroup(RegEx_Line_Instruction_1, "OpCode"))+"@1") Or FindMapElement(OpCode(), UCase(RegularExpressionNamedGroup(RegEx_Line_Instruction_1, "OpCode")))
           *Line\OpCode = OpCode()
-          AddElement(*Line\Operand())
-          *Line\Operand()\Raw = RegularExpressionNamedGroup(RegEx_Line_Instruction_1, "Param_0")
         Else
-          *Line\Raw_Instruction = String
+          *Line\Raw_OpCode = UCase(RegularExpressionNamedGroup(RegEx_Line_Instruction_1, "OpCode"))
         EndIf
+        AddElement(*Line\Operand())
+        *Line\Operand()\Raw = RegularExpressionNamedGroup(RegEx_Line_Instruction_1, "Param_0")
         ;*Line\Raw = #Null$
         ProcedureReturn #True
       EndIf
@@ -1524,7 +1547,7 @@ Module Assembler
         If FindMapElement(OpCode(), UCase(RegularExpressionNamedGroup(RegEx_Line_Instruction_0, "OpCode"))+"@0") Or FindMapElement(OpCode(), UCase(RegularExpressionNamedGroup(RegEx_Line_Instruction_0, "OpCode")))
           *Line\OpCode = OpCode()
         Else
-          *Line\Raw_Instruction = String
+          *Line\Raw_OpCode = UCase(RegularExpressionNamedGroup(RegEx_Line_Instruction_0, "OpCode"))
         EndIf
         ;*Line\Raw = #Null$
         ProcedureReturn #True
@@ -1557,17 +1580,17 @@ Module Assembler
         Next
         If *Line\OpCode
           *Line\Raw + " " + *Line\OpCode\Mnemonic
-          ForEach *Line\Operand()
-            If ListIndex(*Line\Operand()) = 0
-              *Line\Raw + " "
-            Else
-              *Line\Raw + ","
-            EndIf
-            *Line\Raw + *Line\Operand()\Raw
-          Next
         Else
-          *Line\Raw + " " + *Line\Raw_Instruction
+          *Line\Raw + " " + *Line\Raw_OpCode
         EndIf
+        ForEach *Line\Operand()
+          If ListIndex(*Line\Operand()) = 0
+            *Line\Raw + " "
+          Else
+            *Line\Raw + ","
+          EndIf
+          *Line\Raw + *Line\Operand()\Raw
+        Next
         
     EndSelect
   EndProcedure
@@ -1583,6 +1606,7 @@ Module Assembler
       AddElement(*Assembler_File\Line_Container\Line())
       *Assembler_File\Line_Container\Line()\Raw = ReadString(File, #PB_Ascii)
       *Assembler_File\Line_Container\Line()\Stack_Pointer = #Stack_Pointer_Invalid
+      *Assembler_File\Line_Container\Line()\Original_Line_Number = ListIndex(*Assembler_File\Line_Container\Line()) + 1
     Wend
     
     ; #### Define the architecture
@@ -2001,8 +2025,8 @@ Module Assembler
   
 EndModule
 ; IDE Options = PureBasic 5.41 LTS Beta 1 (Windows - x64)
-; CursorPosition = 687
-; FirstLine = 671
+; CursorPosition = 276
+; FirstLine = 244
 ; Folding = ----
 ; EnableUnicode
 ; EnableXP
