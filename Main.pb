@@ -63,6 +63,8 @@ DeclareModule Main
 EndDeclareModule
 
 ; ##################################################### Includes ####################################################
+XIncludeFile "Includes/Log.pbi"
+
 XIncludeFile "Includes/Assembler.pbi"
 XIncludeFile "Includes/Visualizer.pbi"
 
@@ -84,6 +86,9 @@ Module Main
   Main\Path_AppData = Helper::SHGetFolderPath(#CSIDL_APPDATA) + "/D3/PB-Optimizer/"
   MakeSureDirectoryPathExists(Main\Path_AppData)
   
+  Log::File_Create()
+  Log::Entry_Add(Log::#Entry_Type_Info, "Main", "Program started")
+  
   ; ################################################### Main ########################################################
   Define i
   Define Filename.s, File.i
@@ -102,7 +107,9 @@ Module Main
   
   File = ReadFile(#PB_Any, Filename)
   If File
+    Log::Entry_Add(Log::#Entry_Type_Info, "Main", "File " + Filename + " opened")
     *Assembler_File = Assembler::File_Parse(File)
+    Log::Entry_Add(Log::#Entry_Type_Info, "Main", "File " + Filename + " parsed")
     
     CloseFile(File)
   EndIf
@@ -115,7 +122,9 @@ Module Main
 ;     File = CreateFile(#PB_Any, Filename)
 ;     ;File = CreateFile(#PB_Any, Filename+".opt.asm")
 ;     If File
+;      Log::Entry_Add(Log::#Entry_Type_Info, "Main", "File " + Filename + " created")
 ;      Assembler::File_Compose(*Assembler_File, File)
+;      Log::Entry_Add(Log::#Entry_Type_Info, "Main", "File " + Filename + " composed")
 ;      
 ;      CloseFile(File)
 ;     EndIf
@@ -137,10 +146,12 @@ Module Main
     EndIf
   Next
   
+  Log::Entry_Add(Log::#Entry_Type_Info, "Main", "Started FAsm")
   Program = RunProgram(GetPathPart(ProgramFilename())+"FAsm_Original.exe", Parameter, GetCurrentDirectory(), #PB_Program_Open); | #PB_Program_Read | #PB_Program_Error | #PB_Program_UTF8)
   If Not Program
     End
   EndIf
+  Log::Entry_Add(Log::#Entry_Type_Info, "Main", "FAsm done")
   
 ;   Define File = CreateFile(#PB_Any, "C:\Users\David Vogel\Desktop\FAsm output.txt")
   
@@ -173,7 +184,7 @@ Module Main
   
 EndModule
 ; IDE Options = PureBasic 5.41 LTS Beta 1 (Windows - x64)
-; CursorPosition = 113
-; FirstLine = 90
+; CursorPosition = 137
+; FirstLine = 103
 ; EnableUnicode
 ; EnableXP

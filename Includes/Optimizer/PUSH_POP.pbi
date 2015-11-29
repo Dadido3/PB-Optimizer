@@ -53,6 +53,7 @@ DeclareModule Optimizer_PUSH_POP
   ; ################################################### Prototypes ##################################################
   
   ; ################################################### Constants ###################################################
+  #Module_Name = "PUSH POP"
   
   ; ################################################### Structures ##################################################
   
@@ -150,8 +151,7 @@ Module Optimizer_PUSH_POP
             
             If Assembler::Address_Ident_Result(*Line_POP, *Line_POP\Operand()\Address, *Line_PUSH, *Line_PUSH\Operand()\Address)
               
-              ;Debug "Delete: " + *Line_PUSH\Raw
-              ;Debug "Delete: " + *Line_POP\Raw
+              Log::Entry_Add(log::#Entry_Type_Optimization, #Module_Name, RSet(Str(*Line_PUSH\Original_Line_Number),6,"0") + ": Deleted " + *Line_PUSH\Raw)
               
               ; #### Add an offset to any memory addressing between PUSH and POP
               ForEach *Memory_Address()
@@ -161,11 +161,17 @@ Module Optimizer_PUSH_POP
                   Case Assembler::#Architecture_x86
                     *Memory_Address()\Sub_Address()\Value = "4" ; TODO: Values should be stored as number, if possible.
                     *Memory_Address()\Sub_Address()\Negative = #True
+                    Log::Entry_Add(log::#Entry_Type_Optimization, #Module_Name, "Corrected stack offset (-4)")
+                    
                   Case Assembler::#Architecture_x86_64
                     *Memory_Address()\Sub_Address()\Value = "8"
                     *Memory_Address()\Sub_Address()\Negative = #True
+                    Log::Entry_Add(log::#Entry_Type_Optimization, #Module_Name, "Corrected stack offset (-8)")
+                    
                 EndSelect
               Next
+              
+              Log::Entry_Add(log::#Entry_Type_Optimization, #Module_Name, RSet(Str(*Line_POP\Original_Line_Number),6,"0") + ": Deleted " + *Line_POP\Raw)
               
               Assembler::Line_Delete(*Line_Container, *Line_PUSH)
               Assembler::Line_Delete(*Line_Container, *Line_POP)
@@ -194,8 +200,8 @@ Module Optimizer_PUSH_POP
   
 EndModule
 ; IDE Options = PureBasic 5.41 LTS Beta 1 (Windows - x64)
-; CursorPosition = 153
-; FirstLine = 145
+; CursorPosition = 169
+; FirstLine = 137
 ; Folding = -
 ; EnableUnicode
 ; EnableXP

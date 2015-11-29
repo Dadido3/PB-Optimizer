@@ -7,35 +7,47 @@
   <section name="data">
     <explorer view="" pattern="0"/>
     <log show="1"/>
-    <lastopen date="2015-11-25 00:39" user="David Vogel" host="DAVIDS"/>
+    <lastopen date="2015-11-28 12:29" user="David Vogel" host="DAVIDS"/>
   </section>
   <section name="files">
     <file name="Includes\Assembler.pbi">
       <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="++"/>
-      <fingerprint md5="b38bed49d68e8a4cdb5ef9bfa03ffad6"/>
+      <fingerprint md5="1e50a9945fe445d2d21df9e25782ba3e"/>
     </file>
     <file name="Includes\Optimizer\Test.pbi">
       <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="+++"/>
-      <fingerprint md5="6c43f4dfc815038fd6b22209d60e4b67"/>
+      <fingerprint md5="06be01eda8257b024c4d552bd2711256"/>
     </file>
     <file name="Includes\Visualizer.pbi">
       <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="++"/>
-      <fingerprint md5="c4636d2721b497cde08e19281a6fdb82"/>
+      <fingerprint md5="08b50d7cadf3b2ff3f1d664720ac9fa4"/>
     </file>
     <file name="Main.pb">
       <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="+"/>
-      <fingerprint md5="2efbc25a4b548a745d073fe348fa03aa"/>
+      <fingerprint md5="582f7be4ffc9f9d3dcb2cd7e1c883ffe"/>
+    </file>
+    <file name="Includes\Optimizer\PUSH_POP.pbi">
+      <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="+++"/>
+      <fingerprint md5="b95788953abdf1e11d878fc81107b6ee"/>
+    </file>
+    <file name="Includes\Helper.pbi">
+      <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="++"/>
+      <fingerprint md5="2ac26a5a211e66e3d448cbbb7d3e1212"/>
+    </file>
+    <file name="Includes\Log.pbi">
+      <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="++"/>
+      <fingerprint md5="775c555d0664e5115e69c2799b5eb151"/>
     </file>
   </section>
   <section name="targets">
     <target name="x86" enabled="1" default="1">
       <inputfile value="Main.pb"/>
       <outputfile value="Distribution\Windows\x86\FAsm.exe"/>
-      <compiler version="PureBasic 5.40 LTS (Windows - x64)"/>
+      <compiler version="PureBasic 5.41 LTS Beta 1 (Windows - x64)"/>
       <executable value="Distribution\Windows\x86\FAsm.exe"/>
-      <options unicode="1" xpskin="1" user="1" onerror="1" debug="1"/>
-      <compilecount enable="1" value="56"/>
-      <buildcount enable="1" value="1"/>
+      <options unicode="1" xpskin="1" user="1" onerror="1"/>
+      <compilecount enable="1" value="167"/>
+      <buildcount enable="1" value="12"/>
     </target>
   </section>
 </project>

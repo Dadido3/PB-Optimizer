@@ -546,7 +546,7 @@ Module Visualizer
             Line_Reference()\Element()\Text = Line_Reference()\Line\OpCode\Mnemonic + " "
             Line_Reference()\Element()\Color = RGBA(255,255,150,255)
           Else
-            Line_Reference()\Element()\Text = Line_Reference()\Line\Raw_Instruction + " "
+            Line_Reference()\Element()\Text = Line_Reference()\Line\Raw_OpCode + " "
             Line_Reference()\Element()\Color = RGBA(255,255,0,255)
           EndIf
           
@@ -703,8 +703,8 @@ Module Visualizer
   
 EndModule
 ; IDE Options = PureBasic 5.41 LTS Beta 1 (Windows - x64)
-; CursorPosition = 611
-; FirstLine = 580
+; CursorPosition = 548
+; FirstLine = 517
 ; Folding = --
 ; EnableUnicode
 ; EnableXP
