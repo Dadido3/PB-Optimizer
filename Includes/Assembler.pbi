@@ -231,6 +231,8 @@ DeclareModule Assembler
   Structure Register
     Name.s
     Group.i               ; Registers in the same group (like rax, eax, ax, ...) influence each other on a change
+    
+    Size.i                ; Size in bytes
   EndStructure
   
   Structure OpCode
@@ -243,11 +245,6 @@ DeclareModule Assembler
     
     List Read_Operand.i()         ; Operands which read data
     List Mod_Operand.i()          ; Operands which modify data
-    
-    ; #### Stack
-    Stack_Delta_x86.i            ; Change of the stack pointer throught this opcode
-    Stack_Delta_x86_64.i
-    
   EndStructure
   
   Structure Operand
@@ -1223,29 +1220,83 @@ Module Assembler
     
     If *Line\OpCode
       
-      ; #### In case of a subroutine, stop calculating the stack TODO: Gather informations from subroutines, and use it 
-      If *Line\OpCode\Mnemonic = "CALL"
-        Valid = #False
-      EndIf
-      
-      ; #### RET can change the stack, too
-      If *Line\OpCode\Mnemonic = "RET"
-        If SelectElement(*Line\Operand(), 0)
-          If *Line\Operand()\Address\Type = #Address_Type_Immediate_Value
-            Stack_Pointer + Val(*Line\Operand()\Address\Value)
-          Else
-            Valid = #False
-          EndIf
-        EndIf
-      EndIf
-      
-      ; #### Apply delta values to the stack pointer
-      Select *Line_Container\Architecture
-        Case #Architecture_x86
-          Stack_Pointer + *Line\OpCode\Stack_Delta_x86
+      ; #### Special cases for some opcodes
+      Select *Line\OpCode\Mnemonic
+        Case "CALL"
+          ; #### In case of a subroutine, stop calculating the stack TODO: Gather informations from subroutines, and use it 
+          Valid = #False
+          Log::Entry_Add(log::#Entry_Type_Warning, #PB_Compiler_Module, "Stack pointer reconstruction failed at " + *Line\Original_Line_Number + ": " + *Line\Raw)
           
-        Case #Architecture_x86_64
-          Stack_Pointer + *Line\OpCode\Stack_Delta_x86_64
+        Case "RET"
+          ; #### RET can change the stack, too
+          If SelectElement(*Line\Operand(), 0)
+            If *Line\Operand()\Address\Type = #Address_Type_Immediate_Value
+              Stack_Pointer + Val(*Line\Operand()\Address\Value)
+            Else
+              Valid = #False
+              Log::Entry_Add(log::#Entry_Type_Warning, #PB_Compiler_Module, "Stack pointer reconstruction failed at " + *Line\Original_Line_Number + ": " + *Line\Raw)
+            EndIf
+          EndIf
+          
+        Case "PUSH"
+          If SelectElement(*Line\Operand(), 0)
+            Select *Line\Operand()\Address\Type
+              Case #Address_Type_Register
+                Stack_Pointer - *Line\Operand()\Address\Register\Size
+                
+              Case #Address_Type_Immediate_Label, #Address_Type_Immediate_Value, #Address_Type_Memory
+                Select LCase(*Line\Operand()\Address\Size_Operator)
+                  Case "word"
+                    Stack_Pointer - 2
+                  Case "dword"
+                    Stack_Pointer - 4
+                  Case "qword"
+                    Stack_Pointer - 8
+                  Default
+                    Select *Line_Container\Architecture
+                      Case #Architecture_x86
+                        Stack_Pointer - 4
+                      Case #Architecture_x86_64
+                        Stack_Pointer - 8
+                    EndSelect
+                EndSelect
+                
+              Default
+                Valid = #False
+                Log::Entry_Add(log::#Entry_Type_Warning, #PB_Compiler_Module, "Stack pointer reconstruction failed at " + *Line\Original_Line_Number + ": " + *Line\Raw)
+                
+            EndSelect
+          EndIf
+          
+        Case "POP"
+          If SelectElement(*Line\Operand(), 0)
+            Select *Line\Operand()\Address\Type
+              Case #Address_Type_Register
+                Stack_Pointer + *Line\Operand()\Address\Register\Size
+                
+              Case #Address_Type_Immediate_Label, #Address_Type_Immediate_Value, #Address_Type_Memory
+                Select LCase(*Line\Operand()\Address\Size_Operator)
+                  Case "word"
+                    Stack_Pointer + 2
+                  Case "dword"
+                    Stack_Pointer + 4
+                  Case "qword"
+                    Stack_Pointer + 8
+                  Default
+                    Select *Line_Container\Architecture
+                      Case #Architecture_x86
+                        Stack_Pointer + 4
+                      Case #Architecture_x86_64
+                        Stack_Pointer + 8
+                    EndSelect
+                EndSelect
+                
+              Default
+                Valid = #False
+                Log::Entry_Add(log::#Entry_Type_Warning, #PB_Compiler_Module, "Stack pointer reconstruction failed at " + *Line\Original_Line_Number + ": " + *Line\Raw)
+                
+            EndSelect
+          EndIf
           
       EndSelect
       
@@ -1270,6 +1321,7 @@ Module Assembler
                 
               Default
                 Valid = #False
+                Log::Entry_Add(log::#Entry_Type_Warning, #PB_Compiler_Module, "Stack pointer reconstruction failed at " + *Line\Original_Line_Number + ": " + *Line\Raw)
                 
             EndSelect
           EndIf
@@ -1494,6 +1546,7 @@ Module Assembler
           *Line\OpCode = OpCode()
         Else
           *Line\Raw_OpCode = UCase(RegularExpressionNamedGroup(RegEx_Line_Instruction_3, "OpCode"))
+          Log::Entry_Add(log::#Entry_Type_Warning, #PB_Compiler_Module, "Unknown opcode at " + *Line\Original_Line_Number + ": " + *Line\Raw)
         EndIf
         AddElement(*Line\Operand())
         *Line\Operand()\Raw = RegularExpressionNamedGroup(RegEx_Line_Instruction_3, "Param_0")
@@ -1514,6 +1567,7 @@ Module Assembler
           *Line\OpCode = OpCode()
         Else
           *Line\Raw_OpCode = UCase(RegularExpressionNamedGroup(RegEx_Line_Instruction_2, "OpCode"))
+          Log::Entry_Add(log::#Entry_Type_Warning, #PB_Compiler_Module, "Unknown opcode at " + *Line\Original_Line_Number + ": " + *Line\Raw)
         EndIf
         AddElement(*Line\Operand())
         *Line\Operand()\Raw = RegularExpressionNamedGroup(RegEx_Line_Instruction_2, "Param_0")
@@ -1532,6 +1586,7 @@ Module Assembler
           *Line\OpCode = OpCode()
         Else
           *Line\Raw_OpCode = UCase(RegularExpressionNamedGroup(RegEx_Line_Instruction_1, "OpCode"))
+          Log::Entry_Add(log::#Entry_Type_Warning, #PB_Compiler_Module, "Unknown opcode at " + *Line\Original_Line_Number + ": " + *Line\Raw)
         EndIf
         AddElement(*Line\Operand())
         *Line\Operand()\Raw = RegularExpressionNamedGroup(RegEx_Line_Instruction_1, "Param_0")
@@ -1548,6 +1603,7 @@ Module Assembler
           *Line\OpCode = OpCode()
         Else
           *Line\Raw_OpCode = UCase(RegularExpressionNamedGroup(RegEx_Line_Instruction_0, "OpCode"))
+          Log::Entry_Add(log::#Entry_Type_Warning, #PB_Compiler_Module, "Unknown opcode at " + *Line\Original_Line_Number + ": " + *Line\Raw)
         EndIf
         ;*Line\Raw = #Null$
         ProcedureReturn #True
@@ -1610,7 +1666,7 @@ Module Assembler
     Wend
     
     ; #### Define the architecture
-    *Assembler_File\Line_Container\Architecture | #Architecture_x86
+    *Assembler_File\Line_Container\Architecture = #Architecture_x86
     
     ; #### Parse each line
     ForEach *Assembler_File\Line_Container\Line()
@@ -1709,8 +1765,10 @@ Module Assembler
     ProcedureReturn #True
   EndProcedure
   
-  Procedure Register_Add(Name.s, Group.i)
+  Procedure Register_Add(Name.s, Size.i, Group.i)
     Register(Name)\Name = Name
+    
+    Register()\Size = Size
     Register()\Group = Group
   EndProcedure
   
@@ -1726,7 +1784,7 @@ Module Assembler
     *OpCode\Read_Address()\Register = *Register
   EndProcedure
   
-  Procedure OpCode_Add(Name.s, Stack_Delta_x86.i, Stack_Delta_x86_64, Test_Flags.q, Mod_Flags.q, Read_Operands.i, Mod_Operands.i)
+  Procedure OpCode_Add(Name.s, Test_Flags.q, Mod_Flags.q, Read_Operands.i, Mod_Operands.i)
     Protected i
     
     OpCode(Name)\Mnemonic = StringField(Name, 1, "@")
@@ -1766,267 +1824,259 @@ Module Assembler
       EndIf
     Next
     
-    ; #### Stack delta
-    OpCode()\Stack_Delta_x86 = Stack_Delta_x86
-    OpCode()\Stack_Delta_x86_64 = Stack_Delta_x86_64
-    If OpCode()\Stack_Delta_x86 Or OpCode()\Stack_Delta_x86_64
-      OpCode_Mod_Register_Add(OpCode(), Register("ESP"))
-      OpCode_Read_Register_Add(OpCode(), Register("ESP"))
-    EndIf
-    
   EndProcedure
   
   ; ################################################### Init ########################################################
   ; #### Registers
-  Register_Add("AL",     #Register_Group_A)
-  Register_Add("AH",     #Register_Group_A)
-  Register_Add("AX",     #Register_Group_A)
-  Register_Add("EAX",    #Register_Group_A)
-  Register_Add("RAX",    #Register_Group_A)
+  Register_Add("AL",      1,  #Register_Group_A)
+  Register_Add("AH",      1,  #Register_Group_A)
+  Register_Add("AX",      2,  #Register_Group_A)
+  Register_Add("EAX",     4,  #Register_Group_A)
+  Register_Add("RAX",     8,  #Register_Group_A)
   
-  Register_Add("BL",     #Register_Group_B)
-  Register_Add("BH",     #Register_Group_B)
-  Register_Add("BX",     #Register_Group_B)
-  Register_Add("EBX",    #Register_Group_B)
-  Register_Add("RBX",    #Register_Group_B)
+  Register_Add("BL",      1,  #Register_Group_B)
+  Register_Add("BH",      1,  #Register_Group_B)
+  Register_Add("BX",      2,  #Register_Group_B)
+  Register_Add("EBX",     4,  #Register_Group_B)
+  Register_Add("RBX",     8,  #Register_Group_B)
   
-  Register_Add("CL",     #Register_Group_C)
-  Register_Add("CH",     #Register_Group_C)
-  Register_Add("CX",     #Register_Group_C)
-  Register_Add("ECX",    #Register_Group_C)
-  Register_Add("RCX",    #Register_Group_C)
+  Register_Add("CL",      1,  #Register_Group_C)
+  Register_Add("CH",      1,  #Register_Group_C)
+  Register_Add("CX",      2,  #Register_Group_C)
+  Register_Add("ECX",     4,  #Register_Group_C)
+  Register_Add("RCX",     8,  #Register_Group_C)
   
-  Register_Add("DL",     #Register_Group_D)
-  Register_Add("DH",     #Register_Group_D)
-  Register_Add("DX",     #Register_Group_D)
-  Register_Add("EDX",    #Register_Group_D)
-  Register_Add("RDX",    #Register_Group_D)
+  Register_Add("DL",      1,  #Register_Group_D)
+  Register_Add("DH",      1,  #Register_Group_D)
+  Register_Add("DX",      2,  #Register_Group_D)
+  Register_Add("EDX",     4,  #Register_Group_D)
+  Register_Add("RDX",     8,  #Register_Group_D)
   
-  Register_Add("BPL",    #Register_Group_BP)
-  Register_Add("BP",     #Register_Group_BP)
-  Register_Add("EBP",    #Register_Group_BP)
-  Register_Add("RBP",    #Register_Group_BP)
+  Register_Add("BPL",     1,  #Register_Group_BP)
+  Register_Add("BP",      2,  #Register_Group_BP)
+  Register_Add("EBP",     4,  #Register_Group_BP)
+  Register_Add("RBP",     8,  #Register_Group_BP)
   
-  Register_Add("SIL",    #Register_Group_SI)
-  Register_Add("SI",     #Register_Group_SI)
-  Register_Add("ESI",    #Register_Group_SI)
-  Register_Add("RSI",    #Register_Group_SI)
+  Register_Add("SIL",     1,  #Register_Group_SI)
+  Register_Add("SI",      2,  #Register_Group_SI)
+  Register_Add("ESI",     4,  #Register_Group_SI)
+  Register_Add("RSI",     8,  #Register_Group_SI)
   
-  Register_Add("DIL",    #Register_Group_DI)
-  Register_Add("DI",     #Register_Group_DI)
-  Register_Add("EDI",    #Register_Group_DI)
-  Register_Add("RDI",    #Register_Group_DI)
+  Register_Add("DIL",     1,  #Register_Group_DI)
+  Register_Add("DI",      2,  #Register_Group_DI)
+  Register_Add("EDI",     4,  #Register_Group_DI)
+  Register_Add("RDI",     8,  #Register_Group_DI)
   
-  Register_Add("SPL",    #Register_Group_SP)
-  Register_Add("SP",     #Register_Group_SP)
-  Register_Add("ESP",    #Register_Group_SP)
-  Register_Add("RSP",    #Register_Group_SP)
+  Register_Add("SPL",     1,  #Register_Group_SP)
+  Register_Add("SP",      2,  #Register_Group_SP)
+  Register_Add("ESP",     4,  #Register_Group_SP)
+  Register_Add("RSP",     8,  #Register_Group_SP)
   
-  Register_Add("IP",     #Register_Group_IP)
-  Register_Add("EIP",    #Register_Group_IP)
-  Register_Add("RIP",    #Register_Group_IP)
+  Register_Add("IP",      2,  #Register_Group_IP)
+  Register_Add("EIP",     4,  #Register_Group_IP)
+  Register_Add("RIP",     8,  #Register_Group_IP)
   
-  Register_Add("FLAGS",  #Register_Group_FLAGS)
-  Register_Add("EFLAGS", #Register_Group_FLAGS)
-  Register_Add("RFLAGS", #Register_Group_FLAGS)
+  Register_Add("FLAGS",   2,  #Register_Group_FLAGS)
+  Register_Add("EFLAGS",  4,  #Register_Group_FLAGS)
+  Register_Add("RFLAGS",  8,  #Register_Group_FLAGS)
   
-  Register_Add("R8B",    #Register_Group_R8)
-  Register_Add("R8W",    #Register_Group_R8)
-  Register_Add("R8D",    #Register_Group_R8)
-  Register_Add("R8",     #Register_Group_R8)
-  Register_Add("R9B",    #Register_Group_R9)
-  Register_Add("R9W",    #Register_Group_R9)
-  Register_Add("R9D",    #Register_Group_R9)
-  Register_Add("R9",     #Register_Group_R9)
-  Register_Add("R10B",   #Register_Group_R10)
-  Register_Add("R10W",   #Register_Group_R10)
-  Register_Add("R10D",   #Register_Group_R10)
-  Register_Add("R10",    #Register_Group_R10)
-  Register_Add("R11B",   #Register_Group_R11)
-  Register_Add("R11W",   #Register_Group_R11)
-  Register_Add("R11D",   #Register_Group_R11)
-  Register_Add("R11",    #Register_Group_R11)
-  Register_Add("R12B",   #Register_Group_R12)
-  Register_Add("R12W",   #Register_Group_R12)
-  Register_Add("R12D",   #Register_Group_R12)
-  Register_Add("R12",    #Register_Group_R12)
-  Register_Add("R13B",   #Register_Group_R13)
-  Register_Add("R13W",   #Register_Group_R13)
-  Register_Add("R13D",   #Register_Group_R13)
-  Register_Add("R13",    #Register_Group_R13)
-  Register_Add("R14B",   #Register_Group_R14)
-  Register_Add("R14W",   #Register_Group_R14)
-  Register_Add("R14D",   #Register_Group_R14)
-  Register_Add("R14",    #Register_Group_R14)
-  Register_Add("R15B",   #Register_Group_R15)
-  Register_Add("R15W",   #Register_Group_R15)
-  Register_Add("R15D",   #Register_Group_R15)
-  Register_Add("R15",    #Register_Group_R15)
+  Register_Add("R8B",     1,  #Register_Group_R8)
+  Register_Add("R8W",     2,  #Register_Group_R8)
+  Register_Add("R8D",     4,  #Register_Group_R8)
+  Register_Add("R8",      8,  #Register_Group_R8)
+  Register_Add("R9B",     1,  #Register_Group_R9)
+  Register_Add("R9W",     2,  #Register_Group_R9)
+  Register_Add("R9D",     4,  #Register_Group_R9)
+  Register_Add("R9",      8,  #Register_Group_R9)
+  Register_Add("R10B",    1,  #Register_Group_R10)
+  Register_Add("R10W",    2,  #Register_Group_R10)
+  Register_Add("R10D",    4,  #Register_Group_R10)
+  Register_Add("R10",     8,  #Register_Group_R10)
+  Register_Add("R11B",    1,  #Register_Group_R11)
+  Register_Add("R11W",    2,  #Register_Group_R11)
+  Register_Add("R11D",    4,  #Register_Group_R11)
+  Register_Add("R11",     8,  #Register_Group_R11)
+  Register_Add("R12B",    1,  #Register_Group_R12)
+  Register_Add("R12W",    2,  #Register_Group_R12)
+  Register_Add("R12D",    4,  #Register_Group_R12)
+  Register_Add("R12",     8,  #Register_Group_R12)
+  Register_Add("R13B",    1,  #Register_Group_R13)
+  Register_Add("R13W",    2,  #Register_Group_R13)
+  Register_Add("R13D",    4,  #Register_Group_R13)
+  Register_Add("R13",     8,  #Register_Group_R13)
+  Register_Add("R14B",    1,  #Register_Group_R14)
+  Register_Add("R14W",    2,  #Register_Group_R14)
+  Register_Add("R14D",    4,  #Register_Group_R14)
+  Register_Add("R14",     8,  #Register_Group_R14)
+  Register_Add("R15B",    1,  #Register_Group_R15)
+  Register_Add("R15W",    2,  #Register_Group_R15)
+  Register_Add("R15D",    4,  #Register_Group_R15)
+  Register_Add("R15",     8,  #Register_Group_R15)
   
-  Register_Add("ST0",    #Register_Group_ST0)
-  Register_Add("ST1",    #Register_Group_ST1)
-  Register_Add("ST2",    #Register_Group_ST2)
-  Register_Add("ST3",    #Register_Group_ST3)
-  Register_Add("ST4",    #Register_Group_ST4)
-  Register_Add("ST5",    #Register_Group_ST5)
-  Register_Add("ST6",    #Register_Group_ST6)
-  Register_Add("ST7",    #Register_Group_ST7)
-  Register_Add("MM0",    #Register_Group_ST0)
-  Register_Add("MM1",    #Register_Group_ST1)
-  Register_Add("MM2",    #Register_Group_ST2)
-  Register_Add("MM3",    #Register_Group_ST3)
-  Register_Add("MM4",    #Register_Group_ST4)
-  Register_Add("MM5",    #Register_Group_ST5)
-  Register_Add("MM6",    #Register_Group_ST6)
-  Register_Add("MM7",    #Register_Group_ST7)
+  Register_Add("MM0",     8,  #Register_Group_ST0)
+  Register_Add("MM1",     8,  #Register_Group_ST1)
+  Register_Add("MM2",     8,  #Register_Group_ST2)
+  Register_Add("MM3",     8,  #Register_Group_ST3)
+  Register_Add("MM4",     8,  #Register_Group_ST4)
+  Register_Add("MM5",     8,  #Register_Group_ST5)
+  Register_Add("MM6",     8,  #Register_Group_ST6)
+  Register_Add("MM7",     8,  #Register_Group_ST7)
+  Register_Add("ST0",     10, #Register_Group_ST0)
+  Register_Add("ST1",     10, #Register_Group_ST1)
+  Register_Add("ST2",     10, #Register_Group_ST2)
+  Register_Add("ST3",     10, #Register_Group_ST3)
+  Register_Add("ST4",     10, #Register_Group_ST4)
+  Register_Add("ST5",     10, #Register_Group_ST5)
+  Register_Add("ST6",     10, #Register_Group_ST6)
+  Register_Add("ST7",     10, #Register_Group_ST7)
   
-  Register_Add("XMM0",   #Register_Group_XMM0)
-  Register_Add("XMM1",   #Register_Group_XMM1)
-  Register_Add("XMM2",   #Register_Group_XMM2)
-  Register_Add("XMM3",   #Register_Group_XMM3)
-  Register_Add("XMM4",   #Register_Group_XMM4)
-  Register_Add("XMM5",   #Register_Group_XMM5)
-  Register_Add("XMM6",   #Register_Group_XMM6)
-  Register_Add("XMM7",   #Register_Group_XMM7)
-  Register_Add("XMM8",   #Register_Group_XMM8)
-  Register_Add("XMM9",   #Register_Group_XMM9)
-  Register_Add("XMM10",  #Register_Group_XMM10)
-  Register_Add("XMM11",  #Register_Group_XMM11)
-  Register_Add("XMM12",  #Register_Group_XMM12)
-  Register_Add("XMM13",  #Register_Group_XMM13)
-  Register_Add("XMM14",  #Register_Group_XMM14)
-  Register_Add("XMM15",  #Register_Group_XMM15)
-  Register_Add("YMM0",   #Register_Group_XMM0)
-  Register_Add("YMM1",   #Register_Group_XMM1)
-  Register_Add("YMM2",   #Register_Group_XMM2)
-  Register_Add("YMM3",   #Register_Group_XMM3)
-  Register_Add("YMM4",   #Register_Group_XMM4)
-  Register_Add("YMM5",   #Register_Group_XMM5)
-  Register_Add("YMM6",   #Register_Group_XMM6)
-  Register_Add("YMM7",   #Register_Group_XMM7)
-  Register_Add("YMM8",   #Register_Group_XMM8)
-  Register_Add("YMM9",   #Register_Group_XMM9)
-  Register_Add("YMM10",  #Register_Group_XMM10)
-  Register_Add("YMM11",  #Register_Group_XMM11)
-  Register_Add("YMM12",  #Register_Group_XMM12)
-  Register_Add("YMM13",  #Register_Group_XMM13)
-  Register_Add("YMM14",  #Register_Group_XMM14)
-  Register_Add("YMM15",  #Register_Group_XMM15)
-  Register_Add("ZMM0",   #Register_Group_XMM0)
-  Register_Add("ZMM1",   #Register_Group_XMM1)
-  Register_Add("ZMM2",   #Register_Group_XMM2)
-  Register_Add("ZMM3",   #Register_Group_XMM3)
-  Register_Add("ZMM4",   #Register_Group_XMM4)
-  Register_Add("ZMM5",   #Register_Group_XMM5)
-  Register_Add("ZMM6",   #Register_Group_XMM6)
-  Register_Add("ZMM7",   #Register_Group_XMM7)
-  Register_Add("ZMM8",   #Register_Group_XMM8)
-  Register_Add("ZMM9",   #Register_Group_XMM9)
-  Register_Add("ZMM10",  #Register_Group_XMM10)
-  Register_Add("ZMM11",  #Register_Group_XMM11)
-  Register_Add("ZMM12",  #Register_Group_XMM12)
-  Register_Add("ZMM13",  #Register_Group_XMM13)
-  Register_Add("ZMM14",  #Register_Group_XMM14)
-  Register_Add("ZMM15",  #Register_Group_XMM15)
-  Register_Add("ZMM16",  #Register_Group_XMM16)
-  Register_Add("ZMM17",  #Register_Group_XMM17)
-  Register_Add("ZMM18",  #Register_Group_XMM18)
-  Register_Add("ZMM19",  #Register_Group_XMM19)
-  Register_Add("ZMM20",  #Register_Group_XMM20)
-  Register_Add("ZMM21",  #Register_Group_XMM21)
-  Register_Add("ZMM22",  #Register_Group_XMM22)
-  Register_Add("ZMM23",  #Register_Group_XMM23)
-  Register_Add("ZMM24",  #Register_Group_XMM24)
-  Register_Add("ZMM25",  #Register_Group_XMM25)
-  Register_Add("ZMM26",  #Register_Group_XMM26)
-  Register_Add("ZMM27",  #Register_Group_XMM27)
-  Register_Add("ZMM28",  #Register_Group_XMM28)
-  Register_Add("ZMM29",  #Register_Group_XMM29)
-  Register_Add("ZMM30",  #Register_Group_XMM30)
-  Register_Add("ZMM31",  #Register_Group_XMM31)
+  Register_Add("XMM0",    16, #Register_Group_XMM0)
+  Register_Add("XMM1",    16, #Register_Group_XMM1)
+  Register_Add("XMM2",    16, #Register_Group_XMM2)
+  Register_Add("XMM3",    16, #Register_Group_XMM3)
+  Register_Add("XMM4",    16, #Register_Group_XMM4)
+  Register_Add("XMM5",    16, #Register_Group_XMM5)
+  Register_Add("XMM6",    16, #Register_Group_XMM6)
+  Register_Add("XMM7",    16, #Register_Group_XMM7)
+  Register_Add("XMM8",    16, #Register_Group_XMM8)
+  Register_Add("XMM9",    16, #Register_Group_XMM9)
+  Register_Add("XMM10",   16, #Register_Group_XMM10)
+  Register_Add("XMM11",   16, #Register_Group_XMM11)
+  Register_Add("XMM12",   16, #Register_Group_XMM12)
+  Register_Add("XMM13",   16, #Register_Group_XMM13)
+  Register_Add("XMM14",   16, #Register_Group_XMM14)
+  Register_Add("XMM15",   16, #Register_Group_XMM15)
+  Register_Add("YMM0",    32, #Register_Group_XMM0)
+  Register_Add("YMM1",    32, #Register_Group_XMM1)
+  Register_Add("YMM2",    32, #Register_Group_XMM2)
+  Register_Add("YMM3",    32, #Register_Group_XMM3)
+  Register_Add("YMM4",    32, #Register_Group_XMM4)
+  Register_Add("YMM5",    32, #Register_Group_XMM5)
+  Register_Add("YMM6",    32, #Register_Group_XMM6)
+  Register_Add("YMM7",    32, #Register_Group_XMM7)
+  Register_Add("YMM8",    32, #Register_Group_XMM8)
+  Register_Add("YMM9",    32, #Register_Group_XMM9)
+  Register_Add("YMM10",   32, #Register_Group_XMM10)
+  Register_Add("YMM11",   32, #Register_Group_XMM11)
+  Register_Add("YMM12",   32, #Register_Group_XMM12)
+  Register_Add("YMM13",   32, #Register_Group_XMM13)
+  Register_Add("YMM14",   32, #Register_Group_XMM14)
+  Register_Add("YMM15",   32, #Register_Group_XMM15)
+  Register_Add("ZMM0",    64, #Register_Group_XMM0)
+  Register_Add("ZMM1",    64, #Register_Group_XMM1)
+  Register_Add("ZMM2",    64, #Register_Group_XMM2)
+  Register_Add("ZMM3",    64, #Register_Group_XMM3)
+  Register_Add("ZMM4",    64, #Register_Group_XMM4)
+  Register_Add("ZMM5",    64, #Register_Group_XMM5)
+  Register_Add("ZMM6",    64, #Register_Group_XMM6)
+  Register_Add("ZMM7",    64, #Register_Group_XMM7)
+  Register_Add("ZMM8",    64, #Register_Group_XMM8)
+  Register_Add("ZMM9",    64, #Register_Group_XMM9)
+  Register_Add("ZMM10",   64, #Register_Group_XMM10)
+  Register_Add("ZMM11",   64, #Register_Group_XMM11)
+  Register_Add("ZMM12",   64, #Register_Group_XMM12)
+  Register_Add("ZMM13",   64, #Register_Group_XMM13)
+  Register_Add("ZMM14",   64, #Register_Group_XMM14)
+  Register_Add("ZMM15",   64, #Register_Group_XMM15)
+  Register_Add("ZMM16",   64, #Register_Group_XMM16)
+  Register_Add("ZMM17",   64, #Register_Group_XMM17)
+  Register_Add("ZMM18",   64, #Register_Group_XMM18)
+  Register_Add("ZMM19",   64, #Register_Group_XMM19)
+  Register_Add("ZMM20",   64, #Register_Group_XMM20)
+  Register_Add("ZMM21",   64, #Register_Group_XMM21)
+  Register_Add("ZMM22",   64, #Register_Group_XMM22)
+  Register_Add("ZMM23",   64, #Register_Group_XMM23)
+  Register_Add("ZMM24",   64, #Register_Group_XMM24)
+  Register_Add("ZMM25",   64, #Register_Group_XMM25)
+  Register_Add("ZMM26",   64, #Register_Group_XMM26)
+  Register_Add("ZMM27",   64, #Register_Group_XMM27)
+  Register_Add("ZMM28",   64, #Register_Group_XMM28)
+  Register_Add("ZMM29",   64, #Register_Group_XMM29)
+  Register_Add("ZMM30",   64, #Register_Group_XMM30)
+  Register_Add("ZMM31",   64, #Register_Group_XMM31)
   
-  ; #### OpCodes       Stack    Test_Flags     Mod_Flags      Read Oper. Mod. Oper.
-  ;                    x86 _64  %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
-  OpCode_Add("CALL",     0,  0, %000000000000, %000000000000, %00000001, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("ESP")) : OpCode_Mod_Register_Add(OpCode(), Register("EAX")) : OpCode_Mod_Register_Add(OpCode(), Register("ECX")) : OpCode_Mod_Register_Add(OpCode(), Register("EDX"))
-  OpCode_Add("MOV",      0,  0, %000000000000, %000000000000, %00000010, %00000001)
-  OpCode_Add("LEA",      0,  0, %000000000000, %000000000000, %00000010, %00000001)
-  ;                             %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
-  OpCode_Add("ADD",      0,  0, %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("ADC",      0,  0, %000000000001, %100011010101, %00000011, %00000001)
-  OpCode_Add("SUB",      0,  0, %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("SBB",      0,  0, %000000000001, %100011010101, %00000011, %00000001)
-  OpCode_Add("IMUL@1",   0,  0, %000000000000, %100011010101, %00000001, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("EAX")) : OpCode_Mod_Register_Add(OpCode(), Register("EDX")) : OpCode_Read_Register_Add(OpCode(), Register("EAX"))
-  OpCode_Add("IMUL@2",   0,  0, %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("IMUL@3",   0,  0, %000000000000, %100011010101, %00000110, %00000001)
-  OpCode_Add("DEC",      0,  0, %000000000000, %100011010100, %00000001, %00000001)
-  OpCode_Add("INC",      0,  0, %000000000000, %100011010100, %00000001, %00000001)
-  ;                             %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
-  OpCode_Add("SHL",      0,  0, %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("SHR",      0,  0, %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("SAL",      0,  0, %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("SAR",      0,  0, %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("ROL",      0,  0, %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("ROR",      0,  0, %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("RCL",      0,  0, %000000000001, %100011010101, %00000011, %00000001)
-  OpCode_Add("RCR",      0,  0, %000000000001, %100011010101, %00000011, %00000001)
-  ;                             %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
-  OpCode_Add("AND",      0,  0, %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("OR",       0,  0, %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("XOR",      0,  0, %000000000000, %100011010101, %00000011, %00000001)
-  OpCode_Add("NOT",      0,  0, %000000000000, %000000000000, %00000001, %00000001)
-  OpCode_Add("NEG",      0,  0, %000000000000, %100011010101, %00000001, %00000001)
-  ;                             %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
-  OpCode_Add("CWD",      0,  0, %000000000000, %000000000000, %00000000, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("DX"))  : OpCode_Read_Register_Add(OpCode(), Register("AX"))
-  OpCode_Add("CDQ",      0,  0, %000000000000, %000000000000, %00000000, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("EDX")) : OpCode_Read_Register_Add(OpCode(), Register("EAX"))
-  OpCode_Add("CQO",      0,  0, %000000000000, %000000000000, %00000000, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("RDX")) : OpCode_Read_Register_Add(OpCode(), Register("RAX"))
-  ;                             %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
-  OpCode_Add("PUSH",    -4, -8, %000000000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("POP",      4,  8, %000000000000, %000000000000, %00000000, %00000001)
-  OpCode_Add("CMP",      0,  0, %000000000000, %100011010101, %00000011, %00000000)
-  ;                             %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
-  OpCode_Add("JB",       0,  0, %000000000001, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNAE",     0,  0, %000000000001, %000000000000, %00000001, %00000000)
-  OpCode_Add("JC",       0,  0, %000000000001, %000000000000, %00000001, %00000000)
-  OpCode_Add("JBE",      0,  0, %000001000001, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNA",      0,  0, %000001000001, %000000000000, %00000001, %00000000)
-  OpCode_Add("JCXZ",     0,  0, %000000000000, %000000000000, %00000001, %00000000) : OpCode_Read_Register_Add(OpCode(), Register("ECX"))
-  OpCode_Add("JECXZ",    0,  0, %000000000000, %000000000000, %00000001, %00000000) : OpCode_Read_Register_Add(OpCode(), Register("ECX"))
-  OpCode_Add("JL",       0,  0, %100010000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNGE",     0,  0, %100010000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JLE",      0,  0, %100011000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNG",      0,  0, %100011000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JMP",      0,  0, %000000000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNB",      0,  0, %000000000001, %000000000000, %00000001, %00000000)
-  OpCode_Add("JAE",      0,  0, %000000000001, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNC",      0,  0, %000000000001, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNBE",     0,  0, %000001000001, %000000000000, %00000001, %00000000)
-  OpCode_Add("JA",       0,  0, %000001000001, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNL",      0,  0, %100010000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JGE",      0,  0, %100010000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNLE",     0,  0, %100011000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JG",       0,  0, %100011000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNO",      0,  0, %100000000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNP",      0,  0, %000000000100, %000000000000, %00000001, %00000000)
-  OpCode_Add("JPO",      0,  0, %000000000100, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNS",      0,  0, %000010000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNZ",      0,  0, %000001000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JNE",      0,  0, %000001000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JO",       0,  0, %000001000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JP",       0,  0, %000000000100, %000000000000, %00000001, %00000000)
-  OpCode_Add("JPE",      0,  0, %000000000100, %000000000000, %00000001, %00000000)
-  OpCode_Add("JS",       0,  0, %000010000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JZ",       0,  0, %000001000000, %000000000000, %00000001, %00000000)
-  OpCode_Add("JE",       0,  0, %000001000000, %000000000000, %00000001, %00000000)
-  ;                             %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
-  OpCode_Add("NOP",      0,  0, %000000000000, %000000000000, %00000000, %00000000)
-  OpCode_Add("RET",      0,  0, %000000000000, %000000000000, %00000001, %00000000)
+  ; #### OpCodes        Test_Flags     Mod_Flags      Read Oper. Mod. Oper.
+  ;                     %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
+  OpCode_Add("CALL",    %000000000000, %000000000000, %00000001, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("RSP")) : OpCode_Read_Register_Add(OpCode(), Register("RSP")) : OpCode_Mod_Register_Add(OpCode(), Register("RAX")); : OpCode_Mod_Register_Add(OpCode(), Register("ECX")) : OpCode_Mod_Register_Add(OpCode(), Register("EDX"))
+  OpCode_Add("MOV",     %000000000000, %000000000000, %00000010, %00000001)
+  OpCode_Add("LEA",     %000000000000, %000000000000, %00000010, %00000001)
+  ;                     %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
+  OpCode_Add("ADD",     %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("ADC",     %000000000001, %100011010101, %00000011, %00000001)
+  OpCode_Add("SUB",     %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("SBB",     %000000000001, %100011010101, %00000011, %00000001)
+  OpCode_Add("IMUL@1",  %000000000000, %100011010101, %00000001, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("EAX")) : OpCode_Mod_Register_Add(OpCode(), Register("EDX")) : OpCode_Read_Register_Add(OpCode(), Register("EAX"))
+  OpCode_Add("IMUL@2",  %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("IMUL@3",  %000000000000, %100011010101, %00000110, %00000001)
+  OpCode_Add("DEC",     %000000000000, %100011010100, %00000001, %00000001)
+  OpCode_Add("INC",     %000000000000, %100011010100, %00000001, %00000001)
+  ;                     %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
+  OpCode_Add("SHL",     %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("SHR",     %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("SAL",     %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("SAR",     %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("ROL",     %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("ROR",     %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("RCL",     %000000000001, %100011010101, %00000011, %00000001)
+  OpCode_Add("RCR",     %000000000001, %100011010101, %00000011, %00000001)
+  ;                     %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
+  OpCode_Add("AND",     %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("OR",      %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("XOR",     %000000000000, %100011010101, %00000011, %00000001)
+  OpCode_Add("NOT",     %000000000000, %000000000000, %00000001, %00000001)
+  OpCode_Add("NEG",     %000000000000, %100011010101, %00000001, %00000001)
+  ;                     %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
+  OpCode_Add("CWD",     %000000000000, %000000000000, %00000000, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("DX"))  : OpCode_Read_Register_Add(OpCode(), Register("AX"))
+  OpCode_Add("CDQ",     %000000000000, %000000000000, %00000000, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("EDX")) : OpCode_Read_Register_Add(OpCode(), Register("EAX"))
+  OpCode_Add("CQO",     %000000000000, %000000000000, %00000000, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("RDX")) : OpCode_Read_Register_Add(OpCode(), Register("RAX"))
+  ;                     %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
+  OpCode_Add("PUSH",    %000000000000, %000000000000, %00000001, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("RSP")) : OpCode_Read_Register_Add(OpCode(), Register("RSP"))
+  OpCode_Add("POP",     %000000000000, %000000000000, %00000000, %00000001) : OpCode_Mod_Register_Add(OpCode(), Register("RSP")) : OpCode_Read_Register_Add(OpCode(), Register("RSP"))
+  OpCode_Add("CMP",     %000000000000, %100011010101, %00000011, %00000000)
+  ;                     %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
+  OpCode_Add("JB",      %000000000001, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNAE",    %000000000001, %000000000000, %00000001, %00000000)
+  OpCode_Add("JC",      %000000000001, %000000000000, %00000001, %00000000)
+  OpCode_Add("JBE",     %000001000001, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNA",     %000001000001, %000000000000, %00000001, %00000000)
+  OpCode_Add("JCXZ",    %000000000000, %000000000000, %00000001, %00000000) : OpCode_Read_Register_Add(OpCode(), Register("ECX"))
+  OpCode_Add("JECXZ",   %000000000000, %000000000000, %00000001, %00000000) : OpCode_Read_Register_Add(OpCode(), Register("ECX"))
+  OpCode_Add("JL",      %100010000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNGE",    %100010000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JLE",     %100011000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNG",     %100011000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JMP",     %000000000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNB",     %000000000001, %000000000000, %00000001, %00000000)
+  OpCode_Add("JAE",     %000000000001, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNC",     %000000000001, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNBE",    %000001000001, %000000000000, %00000001, %00000000)
+  OpCode_Add("JA",      %000001000001, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNL",     %100010000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JGE",     %100010000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNLE",    %100011000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JG",      %100011000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNO",     %100000000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNP",     %000000000100, %000000000000, %00000001, %00000000)
+  OpCode_Add("JPO",     %000000000100, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNS",     %000010000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNZ",     %000001000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JNE",     %000001000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JO",      %000001000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JP",      %000000000100, %000000000000, %00000001, %00000000)
+  OpCode_Add("JPE",     %000000000100, %000000000000, %00000001, %00000000)
+  OpCode_Add("JS",      %000010000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JZ",      %000001000000, %000000000000, %00000001, %00000000)
+  OpCode_Add("JE",      %000001000000, %000000000000, %00000001, %00000000)
+  ;                     %ODITSZ A P C  %ODITSZ A P C  %87654321  %87654321
+  OpCode_Add("NOP",     %000000000000, %000000000000, %00000000, %00000000)
+  OpCode_Add("RET",     %000000000000, %000000000000, %00000001, %00000000) : OpCode_Mod_Register_Add(OpCode(), Register("RSP")) : OpCode_Read_Register_Add(OpCode(), Register("RSP"))
   
   ; ################################################### Data Sections ###############################################
   
 EndModule
 ; IDE Options = PureBasic 5.41 LTS Beta 1 (Windows - x64)
-; CursorPosition = 276
-; FirstLine = 244
+; CursorPosition = 1668
+; FirstLine = 32
 ; Folding = ----
 ; EnableUnicode
 ; EnableXP

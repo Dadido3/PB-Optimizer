@@ -145,10 +145,10 @@ Module Optimizer_PUSH_POP
             Continue
           EndIf
           
-          ; #### Check if the operands of POP and PUSH have the same value.
-          ; #### In other words: Check if the operand wasn't changed between PUSH and POP
           If SelectElement(*Line_POP\Operand(), 0) And SelectElement(*Line_PUSH\Operand(), 0)
             
+            ; #### Check if the operands of POP and PUSH have the same value.
+            ; #### In other words: Check if the operand wasn't changed between PUSH and POP
             If Assembler::Address_Ident_Result(*Line_POP, *Line_POP\Operand()\Address, *Line_PUSH, *Line_PUSH\Operand()\Address)
               
               Log::Entry_Add(log::#Entry_Type_Optimization, #Module_Name, RSet(Str(*Line_PUSH\Original_Line_Number),6,"0") + ": Deleted " + *Line_PUSH\Raw)
@@ -200,8 +200,8 @@ Module Optimizer_PUSH_POP
   
 EndModule
 ; IDE Options = PureBasic 5.41 LTS Beta 1 (Windows - x64)
-; CursorPosition = 169
-; FirstLine = 137
+; CursorPosition = 149
+; FirstLine = 119
 ; Folding = -
 ; EnableUnicode
 ; EnableXP
