@@ -155,9 +155,13 @@ DeclareModule Assembler
   EndEnumeration
   
   EnumerationBinary
-    #Line_Flag_Temp           ; Temporary flag
-    #Line_Flag_Execute        ; Set, when it's possible that the IP reaches this instruction
-    #Line_Flag_SP_Calculated  ; #True when the stack pointer offset is calculated for this line
+    #Line_Flag_Temp             ; Temporary flag
+    
+    #Line_Flag_Execute          ; Set, when it's possible that the IP reaches this instruction
+    
+    #Line_Flag_Dep_Calculated   ; Set, when the dependecies are calculated
+    #Line_Flag_Flow_Calculated  ; Set, when the possible next lines are calculated
+    #Line_Flag_SP_Calculated    ; Set, when the stack pointer offset is calculated for this line
   EndEnumeration
   
   Enumeration
@@ -296,6 +300,10 @@ DeclareModule Assembler
     *Entry_Point.Line
     
     ;List SubRoutine.SubRoutine()
+    
+    List *CalcQueue_Flow.Line()
+    List *CalcQueue_Dependency.Line()
+    List *CalcQueue_Stack.Line()
     
     Architecture.i
   EndStructure
@@ -1651,6 +1659,10 @@ Module Assembler
     EndSelect
   EndProcedure
   
+  Procedure Line_Container_Analyze(*Line_Container.Line_Container)
+    
+  EndProcedure
+  
   Procedure File_Parse(File.i)
     Protected *Assembler_File.File = AllocateStructure(File)
     If Not *Assembler_File
@@ -2075,8 +2087,8 @@ Module Assembler
   
 EndModule
 ; IDE Options = PureBasic 5.41 LTS Beta 1 (Windows - x64)
-; CursorPosition = 1668
-; FirstLine = 32
+; CursorPosition = 1662
+; FirstLine = 1568
 ; Folding = ----
 ; EnableUnicode
 ; EnableXP

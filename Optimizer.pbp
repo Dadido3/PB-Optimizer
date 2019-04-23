@@ -1,34 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<project xmlns="http://www.purebasic.com/namespace" version="1.0" creator="PureBasic 5.41 LTS Beta 1 (Windows - x64)">
+<project xmlns="http://www.purebasic.com/namespace" version="1.0" creator="PureBasic 5.61 (Windows - x64)">
   <section name="config">
     <options closefiles="1" openmode="0" name="Optimizer"/>
   </section>
   <section name="data">
     <explorer view="" pattern="0"/>
     <log show="1"/>
-    <lastopen date="2015-11-28 12:29" user="David Vogel" host="DAVIDS"/>
+    <lastopen date="2019-04-23 14:14" user="David Vogel" host="DAVIDS"/>
   </section>
   <section name="files">
     <file name="Includes\Assembler.pbi">
       <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="++"/>
-      <fingerprint md5="1e50a9945fe445d2d21df9e25782ba3e"/>
-    </file>
-    <file name="Includes\Optimizer\Test.pbi">
-      <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="+++"/>
-      <fingerprint md5="06be01eda8257b024c4d552bd2711256"/>
-    </file>
-    <file name="Includes\Visualizer.pbi">
-      <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="++"/>
-      <fingerprint md5="08b50d7cadf3b2ff3f1d664720ac9fa4"/>
-    </file>
-    <file name="Main.pb">
-      <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="+"/>
-      <fingerprint md5="582f7be4ffc9f9d3dcb2cd7e1c883ffe"/>
-    </file>
-    <file name="Includes\Optimizer\PUSH_POP.pbi">
-      <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="+++"/>
-      <fingerprint md5="b95788953abdf1e11d878fc81107b6ee"/>
+      <fingerprint md5="7657c0f49f5ab07b81bee43bb9152a03"/>
     </file>
     <file name="Includes\Helper.pbi">
       <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="++"/>
@@ -38,6 +22,22 @@
       <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="++"/>
       <fingerprint md5="775c555d0664e5115e69c2799b5eb151"/>
     </file>
+    <file name="Includes\Optimizer\PUSH_POP.pbi">
+      <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="+++"/>
+      <fingerprint md5="851015788ae614c66e0b602a4dff558f"/>
+    </file>
+    <file name="Includes\Optimizer\Test.pbi">
+      <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="+++"/>
+      <fingerprint md5="06be01eda8257b024c4d552bd2711256"/>
+    </file>
+    <file name="Includes\Visualizer.pbi">
+      <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="++"/>
+      <fingerprint md5="2a30b281e962e3f626f6ea52f13fb10f"/>
+    </file>
+    <file name="Main.pb">
+      <config load="0" scan="1" panel="1" warn="1" lastopen="1" panelstate="+"/>
+      <fingerprint md5="c99d3b8b7767ddaa05daff15871af9a9"/>
+    </file>
   </section>
   <section name="targets">
     <target name="x86" enabled="1" default="1">
@@ -46,7 +46,7 @@
       <compiler version="PureBasic 5.41 LTS Beta 1 (Windows - x64)"/>
       <executable value="Distribution\Windows\x86\FAsm.exe"/>
       <options unicode="1" xpskin="1" user="1" onerror="1"/>
-      <compilecount enable="1" value="167"/>
+      <compilecount enable="1" value="169"/>
       <buildcount enable="1" value="12"/>
     </target>
   </section>

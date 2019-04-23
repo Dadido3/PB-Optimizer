@@ -32,7 +32,12 @@
 ; 
 ; 
 ; 
+; History:
+; - V0.000 (23.11.2015)
+;   - Project started
 ; 
+; - V0.100 (INDEV)
+;   - 
 ; 
 ; ##################################################### External Includes ###########################################
 XIncludeFile "Includes/Helper.pbi"
@@ -184,7 +189,6 @@ Module Main
   
 EndModule
 ; IDE Options = PureBasic 5.41 LTS Beta 1 (Windows - x64)
-; CursorPosition = 137
-; FirstLine = 103
+; CursorPosition = 39
 ; EnableUnicode
 ; EnableXP
